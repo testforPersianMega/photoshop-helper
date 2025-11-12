@@ -28,47 +28,57 @@
 //   ]
 // }
 
-// make_manga_text_RTL_fullbox.jsx
-// Multi-line first (via line breaks), keep full bubble-sized text box,
-// shrink font only if needed, RTL paragraph direction, centered text.
+// make_manga_text_RTL_fullbox_v2.jsx
+// Full bubble-sized paragraph box + multi-line first (diamond wrap) -> size fallback.
+// Forces RTL paragraph direction via Action Manager and uses World-Ready ME composer if present.
+// Center-justified lines, visual center snap, rotation + image_size scaling. Robust string handling.
 
 #target photoshop
 app.displayDialogs = DialogModes.NO;
 app.preferences.rulerUnits = Units.PIXELS;
 
 // ===== USER CONFIG =====
-var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker");
+var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker");  // change if needed
 var imageFile   = File(scriptFolder + "/94107d26-f530-4994-8a94-e48a6e70777c.png");
 var jsonFile    = File(scriptFolder + "/positions.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 
-// ===== Legacy-safe JSON =====
+// ===== JSON (legacy-safe) =====
 if (typeof JSON === 'undefined') { JSON = {}; JSON.parse = function (s) { return eval('(' + s + ')'); }; }
 
-// ===== Utils =====
+// ===== String helpers (no .trim) =====
+function toStr(v){
+  if (v === undefined || v === null) return "";
+  try{
+    if (typeof v === "object") {
+      if (v.valueOf && typeof v.valueOf() !== "object") return String(v.valueOf());
+      try { return JSON.stringify(v); } catch(e2){ return String(v); }
+    }
+    return String(v);
+  } catch(e){ return ""; }
+}
+function safeTrim(s){ return s.replace(/^[\s\u00A0]+/, "").replace(/[\s\u00A0]+$/, ""); }
+function normalizeWS(s){ return s.replace(/\s+/g, " "); }
+
+// ===== Geometry helpers =====
 function solidBlack(){ var c=new SolidColor(); c.rgb.red=0;c.rgb.green=0;c.rgb.blue=0; return c; }
 function clampInt(v){ return Math.round(v); }
-function toStr(v){ if (v===undefined||v===null) return ""; try{
-  if (typeof v==="object"){ if (v.valueOf&&typeof v.valueOf()!=="object") return String(v.valueOf());
-    try { return JSON.stringify(v); } catch(e2){ return String(v); } }
-  return String(v);
-} catch(e){ return ""; } }
-function safeTrim(s){ return s.replace(/^[\s\u00A0]+/,"").replace(/[\s\u00A0]+$/,""); }
-function normalizeWS(s){ return s.replace(/\s+/g," "); }
-
-function layerBoundsPx(lyr){ var b=lyr.bounds; return {
-  left:b[0].as('px'), top:b[1].as('px'), right:b[2].as('px'), bottom:b[3].as('px'),
-  width:b[2].as('px')-b[0].as('px'), height:b[3].as('px')-b[1].as('px')
-};}
+function layerBoundsPx(lyr){
+  var b = lyr.bounds;
+  return { left:b[0].as('px'), top:b[1].as('px'), right:b[2].as('px'), bottom:b[3].as('px'),
+           width:b[2].as('px')-b[0].as('px'), height:b[3].as('px')-b[1].as('px') };
+}
 function layerCenterPx(lyr){ var bb=layerBoundsPx(lyr); return { x:(bb.left+bb.right)/2, y:(bb.top+bb.bottom)/2 }; }
-function translateToCenter(lyr,cx,cy){ var c=layerCenterPx(lyr); lyr.translate(cx-c.x, cy-c.y); }
-function fitsWithinRect(lyr,L,T,R,B){ var b=layerBoundsPx(lyr); return (b.left>=L-0.5&&b.top>=T-0.5&&b.right<=R+0.5&&b.bottom<=B+0.5); }
+function translateToCenter(lyr, cx, cy){ var c=layerCenterPx(lyr); lyr.translate(cx-c.x, cy-c.y); }
+function fitsWithinRect(lyr, L, T, R, B){ var b=layerBoundsPx(lyr); return (b.left>=L-0.5&&b.top>=T-0.5&&b.right<=R+0.5&&b.bottom<=B+0.5); }
 
-// Centers/boxes
-function polygonCentroid(points){ var n=points.length;if(n<3)return null; var A=0,Cx=0,Cy=0, i,x1,y1,x2,y2,c;
+// ===== Centers/boxes =====
+function polygonCentroid(points){
+  var n=points.length; if(n<3) return null;
+  var A=0,Cx=0,Cy=0, i,x1,y1,x2,y2,c;
   for(i=0;i<n;i++){ x1=points[i][0]; y1=points[i][1]; x2=points[(i+1)%n][0]; y2=points[(i+1)%n][1];
-    c=(x1*y2 - x2*y1); A+=c; Cx+=(x1+x2)*c; Cy+=(y1+y2)*c; } A/=2;
-  if (Math.abs(A)<1e-6){ var sx=0,sy=0; for(i=0;i<n;i++){ sx+=points[i][0]; sy+=points[i][1]; } return {x:sx/n,y:sy/n}; }
+    c=(x1*y2 - x2*y1); A+=c; Cx+=(x1+x2)*c; Cy+=(y1+y2)*c; }
+  A/=2; if (Math.abs(A)<1e-6){ var sx=0,sy=0; for(i=0;i<n;i++){ sx+=points[i][0]; sy+=points[i][1]; } return {x:sx/n,y:sy/n}; }
   return { x: Cx/(6*A), y: Cy/(6*A) };
 }
 function deriveCenter(item){
@@ -84,7 +94,7 @@ function deriveBox(item){
   return null;
 }
 
-// Fonts & RTL
+// ===== Fonts & RTL helpers =====
 function getFontForType(type){
   switch(type){
     case "Standard Speech": return "Potk-Black";
@@ -97,30 +107,83 @@ function getFontForType(type){
     default:                return "ArialMT";
   }
 }
-// Force RTL direction using Unicode marks (fallback) while we also try to set Photoshop paragraphDirection to RTL.
+
+// Minimal mark avoids visual shift; real RTL comes from paragraphDirection.
 function forceRTL(s){ var RLE="\u202B", PDF="\u202C", RLM="\u200F"; return RLM + RLE + s + PDF; }
 
-// Try to set paragraph direction to RTL using Action Manager (works on ME-enabled PS).
-function setParagraphDirectionRTL(){
-  try{
-    var idsetd = charIDToTypeID("setd");
-    var desc = new ActionDescriptor();
-    var ref = new ActionReference();
-    ref.putEnumerated(stringIDToTypeID("textLayer"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
-    desc.putReference(charIDToTypeID("null"), ref);
 
-    var textDesc = new ActionDescriptor();
-    var paraStyleList = new ActionList();
-    var paraStyle = new ActionDescriptor();
-    paraStyle.putEnumerated(stringIDToTypeID("paragraphDirection"),
-                            stringIDToTypeID("paragraphDirection"),
-                            stringIDToTypeID("RightToLeftParagraph"));
-    paraStyleList.putObject(stringIDToTypeID("paragraphStyle"), paraStyle);
-    textDesc.putList(stringIDToTypeID("paragraphStyle"), paraStyleList);
+// Force Right-to-Left paragraph direction on the ACTIVE text layer (ME-enabled builds)
+function applyParagraphDirectionRTL() {
+    try {
+        if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return;
 
-    desc.putObject(charIDToTypeID("T   "), stringIDToTypeID("textLayer"), textDesc);
-    executeAction(idsetd, desc, DialogModes.NO);
-  }catch(e){ /* silently ignore; Unicode RTL marks still enforce RTL */ }
+        var s2t = stringIDToTypeID, c2t = charIDToTypeID;
+
+        // capture contents and length
+        var ti  = app.activeDocument.activeLayer.textItem;
+        var txt = ti.contents;
+        var len = txt.length;
+
+        var desc = new ActionDescriptor();
+        var ref  = new ActionReference();
+        ref.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
+        desc.putReference(c2t('null'), ref);
+
+        var textDesc = new ActionDescriptor();
+
+        // keep same contents
+        textDesc.putString(s2t('textKey'), txt);
+
+        // apply paragraph style to whole range
+        var psList  = new ActionList();
+        var psRange = new ActionDescriptor();
+        psRange.putInteger(s2t('from'), 0);
+        psRange.putInteger(s2t('to'),   len);
+
+        var pStyle = new ActionDescriptor();
+        pStyle.putEnumerated(
+            s2t('paragraphDirection'),
+            s2t('paragraphDirection'),
+            s2t('RightToLeftParagraph')
+        );
+        // ✅ Use 'center' (not 'centerJustify')
+        pStyle.putEnumerated(
+            s2t('justification'),
+            s2t('justification'),
+            s2t('center')
+        );
+
+        psRange.putObject(s2t('paragraphStyle'), s2t('paragraphStyle'), pStyle);
+        psList.putObject(s2t('paragraphStyleRange'), psRange);
+        textDesc.putList(s2t('paragraphStyleRange'), psList);
+
+        desc.putObject(c2t('T   '), s2t('textLayer'), textDesc);
+        executeAction(c2t('setd'), desc, DialogModes.NO);
+
+        // Belt & suspenders: also re-assert via DOM (some builds like this)
+        ti.justification = Justification.CENTER;
+
+    } catch(e) { /* ignore if ME features not available */ }
+}
+
+
+// Optional: set ME World-Ready Every-Line Composer (if available)
+function trySetMEEveryLineComposer() {
+  try {
+    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
+    var d = new ActionDescriptor(), r = new ActionReference();
+    r.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
+    d.putReference(c2t('null'), r);
+
+    var t = new ActionDescriptor();
+    t.putEnumerated(
+      s2t('textComposer'),
+      s2t('textComposer'),
+      s2t('adbeMEEveryLineComposer')
+    );
+    d.putObject(c2t('T   '), s2t('textLayer'), t);
+    executeAction(c2t('setd'), d, DialogModes.NO);
+  } catch (e) { /* not available on all installs */ }
 }
 
 function deriveRotationDeg(item){
@@ -129,7 +192,7 @@ function deriveRotationDeg(item){
   return 0;
 }
 
-// ==== Multi-line first: diamond breaks (short → long → short when many lines) ====
+// ===== Diamond wrap (short → long → short) =====
 function estMaxLines(innerH, sizePx){ var leading=Math.max(1, Math.floor(sizePx*1.18)); return Math.max(1, Math.floor(innerH/leading)); }
 function estCharsPerLine(innerW, sizePx){ var avg=Math.max(3, sizePx*0.6); return Math.max(8, Math.floor(innerW/avg)); }
 function chooseLineCount(totalChars, maxCPL, maxLines){ var need=Math.max(1, Math.ceil(totalChars/Math.max(1,maxCPL))); return Math.min(Math.max(need,1), Math.max(maxLines,1)); }
@@ -137,8 +200,10 @@ function capsDiamond(L, baseCap){ var caps=[], mid=(L-1)/2.0; for (var i=0;i<L;i
 function diamondWrap(text, innerW, innerH, sizePx){
   var s = toStr(text); s = normalizeWS(s); s = safeTrim(s); if (!s) return "";
   var words = s.split(" "); if (words.length <= 3) return s;
+
   var maxLines=estMaxLines(innerH,sizePx), maxCPL=estCharsPerLine(innerW,sizePx), totalChars=s.length;
   var L = chooseLineCount(totalChars,maxCPL,maxLines); if (L<=1) return s;
+
   var caps = (L>=4)? capsDiamond(L,maxCPL) : (function(){ var a=[]; for (var i=0;i<L;i++) a[i]=Math.max(6, Math.floor(maxCPL*0.9)); return a; })();
   var lines=[], cur=[], curLen=0, idx=0, cap=caps[idx];
   for (var w=0; w<words.length; w++){
@@ -151,7 +216,7 @@ function diamondWrap(text, innerW, innerH, sizePx){
   return lines.join("\r"); // Photoshop newline
 }
 
-// Create paragraph text layer exactly the inner bubble size (no shrinking of the layer)
+// Create paragraph exactly the inner bubble size (never shrink box)
 function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH){
   var left = cx - innerW/2, top = cy - innerH/2;
   var lyr = doc.artLayers.add();
@@ -164,11 +229,8 @@ function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, inn
   try { ti.leading = Math.max(1, Math.floor(sizePx * 1.18)); } catch(e){}
   ti.justification = Justification.CENTER;      // centered lines
   ti.position = [left, top];
-  ti.width = innerW; ti.height = innerH;       // keep full bubble size
+  ti.width = innerW; ti.height = innerH;       // full box
   try { ti.color = app.foregroundColor; } catch(e){ ti.color = solidBlack(); }
-
-  // Try to set real RTL paragraph direction (ME builds). If it fails, marks still do RTL.
-  setParagraphDirectionRTL();
   return lyr;
 }
 
@@ -177,7 +239,7 @@ function quickShrinkToFit(lyr, ti, innerW, innerH){
   var b = layerBoundsPx(lyr);
   var wRatio = innerW / Math.max(1, b.width);
   var hRatio = innerH / Math.max(1, b.height);
-  var scale = Math.min(wRatio, hRatio) * 0.98; // tiny safety
+  var scale = Math.min(wRatio, hRatio) * 0.98; // small safety
   if (scale < 1.0){
     var newSize = Math.max(8, Math.floor(ti.size * scale));
     ti.size = newSize; try { ti.leading = Math.max(1, Math.floor(newSize * 1.12)); } catch(e){}
@@ -240,13 +302,25 @@ for (var i=0; i<items.length; i++){
   var innerW = Math.max(20, bw - 2*pad);
   var innerH = Math.max(20, bh - 2*pad);
 
-  // 1) MULTI-LINE FIRST (insert diamond line breaks), fixed full-size box
+  // 1) MULTI-LINE FIRST (smart diamond line breaks) in a fixed-size box
   var startSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
   var wrapped = diamondWrap(raw, innerW, innerH, startSize);
   var fontName = getFontForType(item.bubble_type || "Standard Speech");
 
   var lyr = createParagraphFullBox(doc, wrapped, fontName, startSize, cx, cy, innerW, innerH);
   var ti = lyr.textItem;
+
+  // Force **RTL paragraph direction** + ME composer on this layer
+  app.activeDocument.activeLayer = lyr;
+  applyParagraphDirectionRTL();
+  trySetMEEveryLineComposer();
+
+  var ti = lyr.textItem;
+ti.justification = Justification.CENTER;
+// Re-set the box top-left (centered box):
+ti.position = [cx - ti.width/2, cy - ti.height/2];
+// Snap the *visual* center in case metrics moved:
+translateToCenter(lyr, cx, cy);
 
   // 2) SIZE FALLBACK (only if still overflowing)
   var L = cx - innerW/2, T = cy - innerH/2, R = cx + innerW/2, B = cy + innerH/2;
