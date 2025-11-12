@@ -109,7 +109,18 @@ function getFontForType(type){
 }
 
 // Minimal mark avoids visual shift; real RTL comes from paragraphDirection.
-function forceRTL(s){ var RLE="\u202B", PDF="\u202C", RLM="\u200F"; return RLM + RLE + s + PDF; }
+function forceRTL(s){
+  var RLE="\u202B", PDF="\u202C", RLM="\u200F";
+  var str = toStr(s);
+  if (!str) return RLM;
+  // Normalize Photoshop newlines to \r and wrap each line in RTL markers so the paragraph direction is enforced.
+  var norm = str.replace(/\r\n/g, "\r").replace(/\n/g, "\r");
+  var parts = norm.split("\r");
+  for (var i=0; i<parts.length; i++){
+    parts[i] = RLM + RLE + parts[i] + PDF;
+  }
+  return parts.join("\r");
+}
 
 
 // Force Right-to-Left paragraph direction on the ACTIVE text layer (ME-enabled builds)
