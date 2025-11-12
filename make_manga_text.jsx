@@ -168,6 +168,7 @@ function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, inn
   try { ti.color = app.foregroundColor; } catch(e){ ti.color = solidBlack(); }
 
   // Try to set real RTL paragraph direction (ME builds). If it fails, marks still do RTL.
+  try { doc.activeLayer = lyr; } catch(e){}
   setParagraphDirectionRTL();
   return lyr;
 }
