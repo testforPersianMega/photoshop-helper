@@ -630,16 +630,23 @@ for (var i=0; i<items.length; i++){
   // build text seed
   var preferredLines = null;
   var baseSeedText;
+  var wrappedPreferred;
   if (hasManualBreaks) {
     var manualParts = raw.split(/\n+/);
     preferredLines = manualParts.length;
     baseSeedText = collapseWhitespace(manualParts.join(" "));
+
+    var cleanedManual = [];
+    for (var m = 0; m < manualParts.length; m++) {
+      cleanedManual.push(safeTrim(collapseWhitespace(manualParts[m])));
+    }
+    wrappedPreferred = cleanedManual.join("\r");
   } else {
     baseSeedText = collapseWhitespace(raw);
+    wrappedPreferred = diamondWrap(baseSeedText, innerW, innerH, baseSize, preferredLines);
   }
 
   // --- first pass: respect manual break hints (if any) ---
-  var wrappedPreferred = diamondWrap(baseSeedText, innerW, innerH, baseSize, preferredLines);
   var sizePreferred    = estimateSafeFontSizeForWrapped(wrappedPreferred, innerW, innerH, baseSize);
 
   // --- second pass: if manual breaks made font too small, ignore them ---
