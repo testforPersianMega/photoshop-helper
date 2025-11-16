@@ -632,7 +632,7 @@ for (var i=0; i<items.length; i++){
   var baseSeedText;
   var wrappedPreferred;
   if (hasManualBreaks) {
-    var manualParts = raw.split(/\n+/);
+    var manualParts = raw.split(/\n/);
     preferredLines = manualParts.length;
     baseSeedText = collapseWhitespace(manualParts.join(" "));
 
