@@ -65,6 +65,17 @@ function toStr(v){
 function safeTrim(s){ return s.replace(/^[\s\u00A0]+/, "").replace(/[\s\u00A0]+$/, ""); }
 function collapseWhitespace(s){ return s.replace(/\s+/g, " "); }
 
+function stripBidiControls(s){
+  var str = toStr(s);
+  if (!str) return "";
+  return str.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "");
+}
+
+function visualLength(s){
+  if (!s) return 0;
+  return stripBidiControls(s).length;
+}
+
 // Keep line breaks, normalize spaces, and convert literal "\n" to real newlines
 function normalizeWSKeepBreaks(s){
   var str = toStr(s);
@@ -268,10 +279,18 @@ function rebalanceDiamondLines(lines){
     if (!str) return [];
     return str.split(" ");
   }
+  function cleanJoin(words){
+    var filtered = [];
+    for (var i=0; i<words.length; i++){
+      if (words[i]) filtered.push(words[i]);
+    }
+    return filtered.join(" ");
+  }
+
   var maxIterations = 10;
   for (var iter=0; iter<maxIterations; iter++){
     var i, lens = [];
-    for (i=0; i<lines.length; i++) lens[i] = lines[i].length;
+    for (i=0; i<lines.length; i++) lens[i] = visualLength(lines[i]);
 
     var maxIdx = 0;
     for (i=1; i<lens.length; i++){
@@ -284,25 +303,80 @@ function rebalanceDiamondLines(lines){
       var w0 = splitWords(lines[0]);
       if (w0.length <= 1) break;
       var moved = w0.pop();
-      lines[0] = w0.join(" ");
+      lines[0] = cleanJoin(w0);
       var w1 = splitWords(lines[1]);
       w1.unshift(moved);
-      lines[1] = w1.join(" ");
+      lines[1] = cleanJoin(w1);
     } else if (maxIdx === lines.length-1){
       var wl = splitWords(lines[lines.length-1]);
       if (wl.length <= 1) break;
       var moved2 = wl.shift();
-      lines[lines.length-1] = wl.join(" ");
+      lines[lines.length-1] = cleanJoin(wl);
       var wp = splitWords(lines[lines.length-2]);
       wp.push(moved2);
-      lines[lines.length-2] = wp.join(" ");
+      lines[lines.length-2] = cleanJoin(wp);
     }
   }
+
+  if (lines.length <= 1) return lines;
+
+  var visLens = [];
+  var total = 0;
+  for (var j=0; j<lines.length; j++){
+    visLens[j] = visualLength(lines[j]);
+    total += visLens[j];
+  }
+  var avg = total / Math.max(1, lines.length);
+  var minTarget = Math.max(4, avg * 0.6);
+
+  function pullFromNext(){
+    if (lines.length < 2) return false;
+    var w0 = splitWords(lines[0]);
+    var w1 = splitWords(lines[1]);
+    if (w1.length === 0) {
+      lines.splice(1,1);
+      return true;
+    }
+    var moved = w1.shift();
+    w0.push(moved);
+    lines[0] = cleanJoin(w0);
+    lines[1] = cleanJoin(w1);
+    if (!lines[1]) lines.splice(1,1);
+    return true;
+  }
+
+  function pullFromPrev(){
+    if (lines.length < 2) return false;
+    var lastIdx = lines.length-1;
+    var wl = splitWords(lines[lastIdx]);
+    var wp = splitWords(lines[lastIdx-1]);
+    if (wp.length === 0){
+      lines.splice(lastIdx-1,1);
+      return true;
+    }
+    var moved = wp.pop();
+    wl.unshift(moved);
+    lines[lastIdx] = cleanJoin(wl);
+    lines[lastIdx-1] = cleanJoin(wp);
+    if (!lines[lastIdx-1]) lines.splice(lastIdx-1,1);
+    return true;
+  }
+
+  var guard = 10;
+  while (lines.length > 1 && visualLength(lines[0]) < minTarget && guard-- > 0){
+    if (!pullFromNext()) break;
+  }
+
+  guard = 10;
+  while (lines.length > 1 && visualLength(lines[lines.length-1]) < minTarget && guard-- > 0){
+    if (!pullFromPrev()) break;
+  }
+
   return lines;
 }
 
-// diamondWrap: supports optional forcedLines (from user \n count)
-function diamondWrap(text, innerW, innerH, sizePx, forcedLines){
+// diamondWrap: supports optional preferredLines (from user \n count)
+function diamondWrap(text, innerW, innerH, sizePx, preferredLines){
   var s = toStr(text);
   s = collapseWhitespace(s);
   s = safeTrim(s);
@@ -313,13 +387,13 @@ function diamondWrap(text, innerW, innerH, sizePx, forcedLines){
 
   var maxLines   = estMaxLines(innerH, sizePx);
   var maxCPL     = estCharsPerLine(innerW, sizePx);
-  var totalChars = s.length;
+  var totalChars = visualLength(s);
 
   var L;
-  if (forcedLines && forcedLines > 0){
-    L = Math.min(maxLines, Math.max(1, forcedLines));
-  } else {
-    L = chooseLineCount(totalChars, maxCPL, maxLines);
+  L = chooseLineCount(totalChars, maxCPL, maxLines);
+  if (preferredLines && preferredLines > 0){
+    var hint = Math.min(maxLines, Math.max(1, preferredLines));
+    L = Math.max(1, Math.min(maxLines, Math.round((L + hint) / 2)));
   }
   if (L <= 1) return s;
 
@@ -341,14 +415,15 @@ function diamondWrap(text, innerW, innerH, sizePx, forcedLines){
 
   for (var w=0; w<words.length; w++){
     var token = words[w];
-    var extra = (curLen === 0 ? token.length : token.length + 1);
+    var tokenLen = visualLength(token);
+    var extra = (curLen === 0 ? tokenLen : tokenLen + 1);
     if (curLen + extra <= cap){
       cur.push(token);
       curLen += extra;
     } else {
       lines.push(cur.join(" "));
       cur = [token];
-      curLen = token.length;
+      curLen = tokenLen;
       idx = Math.min(idx+1, caps.length-1);
       cap = caps[idx];
     }
@@ -377,7 +452,8 @@ function estimateSafeFontSizeForWrapped(wrapped, innerW, innerH, baseSize){
   for (var i=0; i<parts.length; i++){
     var line = safeTrim(parts[i]);
     if (!line) continue;
-    if (line.length > maxChars) maxChars = line.length;
+    var len = visualLength(line);
+    if (len > maxChars) maxChars = len;
   }
   if (maxChars <= 0) return baseSize;
 
@@ -552,30 +628,30 @@ for (var i=0; i<items.length; i++){
   var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
 
   // build text seed
-  var forcedLines = null;
+  var preferredLines = null;
   var baseSeedText;
   if (hasManualBreaks) {
     var manualParts = raw.split(/\n+/);
-    forcedLines = manualParts.length;
+    preferredLines = manualParts.length;
     baseSeedText = collapseWhitespace(manualParts.join(" "));
   } else {
     baseSeedText = collapseWhitespace(raw);
   }
 
-  // --- first pass: respect manual breaks (if any) ---
-  var wrappedForced = diamondWrap(baseSeedText, innerW, innerH, baseSize, forcedLines);
-  var sizeForced    = estimateSafeFontSizeForWrapped(wrappedForced, innerW, innerH, baseSize);
+  // --- first pass: respect manual break hints (if any) ---
+  var wrappedPreferred = diamondWrap(baseSeedText, innerW, innerH, baseSize, preferredLines);
+  var sizePreferred    = estimateSafeFontSizeForWrapped(wrappedPreferred, innerW, innerH, baseSize);
 
   // --- second pass: if manual breaks made font too small, ignore them ---
-  var wrapped = wrappedForced;
-  var finalSize = sizeForced;
+  var wrapped = wrappedPreferred;
+  var finalSize = sizePreferred;
 
-  if (hasManualBreaks && sizeForced < baseSize * 0.7) {
-    log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
+  if (hasManualBreaks && sizePreferred < baseSize * 0.7) {
+    log("  manual breaks cause tiny size ("+sizePreferred+") -> try reflow without forced lines");
     var wrappedFree = diamondWrap(baseSeedText, innerW, innerH, baseSize, null);
     var sizeFree    = estimateSafeFontSizeForWrapped(wrappedFree, innerW, innerH, baseSize);
     log("  alt reflow size=" + sizeFree);
-    if (sizeFree > sizeForced) {
+    if (sizeFree > sizePreferred) {
       wrapped   = wrappedFree;
       finalSize = sizeFree;
     }
