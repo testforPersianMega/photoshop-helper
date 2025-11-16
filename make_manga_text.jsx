@@ -287,39 +287,6 @@ function rebalanceDiamondLines(lines){
     return filtered.join(" ");
   }
 
-  function stealForward(idx){
-    if (idx < 0 || idx >= lines.length-1) return false;
-    var cur = splitWords(lines[idx]);
-    var next = splitWords(lines[idx+1]);
-    if (next.length === 0){
-      lines.splice(idx+1,1);
-      lines[idx] = cleanJoin(cur);
-      return true;
-    }
-    var moved = next.shift();
-    cur.push(moved);
-    lines[idx] = cleanJoin(cur);
-    lines[idx+1] = cleanJoin(next);
-    if (!lines[idx+1]) lines.splice(idx+1,1);
-    return true;
-  }
-
-  function stealBackward(idx){
-    if (idx <= 0 || idx >= lines.length) return false;
-    var cur = splitWords(lines[idx]);
-    var prev = splitWords(lines[idx-1]);
-    if (prev.length === 0){
-      lines.splice(idx-1,1);
-      return true;
-    }
-    var moved = prev.pop();
-    cur.unshift(moved);
-    lines[idx] = cleanJoin(cur);
-    lines[idx-1] = cleanJoin(prev);
-    if (!lines[idx-1]) lines.splice(idx-1,1);
-    return true;
-  }
-
   var maxIterations = 10;
   for (var iter=0; iter<maxIterations; iter++){
     var i, lens = [];
@@ -362,39 +329,47 @@ function rebalanceDiamondLines(lines){
   var avg = total / Math.max(1, lines.length);
   var minTarget = Math.max(4, avg * 0.6);
 
+  function pullFromNext(){
+    if (lines.length < 2) return false;
+    var w0 = splitWords(lines[0]);
+    var w1 = splitWords(lines[1]);
+    if (w1.length === 0) {
+      lines.splice(1,1);
+      return true;
+    }
+    var moved = w1.shift();
+    w0.push(moved);
+    lines[0] = cleanJoin(w0);
+    lines[1] = cleanJoin(w1);
+    if (!lines[1]) lines.splice(1,1);
+    return true;
+  }
+
+  function pullFromPrev(){
+    if (lines.length < 2) return false;
+    var lastIdx = lines.length-1;
+    var wl = splitWords(lines[lastIdx]);
+    var wp = splitWords(lines[lastIdx-1]);
+    if (wp.length === 0){
+      lines.splice(lastIdx-1,1);
+      return true;
+    }
+    var moved = wp.pop();
+    wl.unshift(moved);
+    lines[lastIdx] = cleanJoin(wl);
+    lines[lastIdx-1] = cleanJoin(wp);
+    if (!lines[lastIdx-1]) lines.splice(lastIdx-1,1);
+    return true;
+  }
+
   var guard = 10;
   while (lines.length > 1 && visualLength(lines[0]) < minTarget && guard-- > 0){
-    if (!stealForward(0)) break;
+    if (!pullFromNext()) break;
   }
 
   guard = 10;
   while (lines.length > 1 && visualLength(lines[lines.length-1]) < minTarget && guard-- > 0){
-    if (!stealBackward(lines.length-1)) break;
-  }
-
-  visLens = [];
-  total = 0;
-  for (j=0; j<lines.length; j++){
-    visLens[j] = visualLength(lines[j]);
-    total += visLens[j];
-  }
-  avg = total / Math.max(1, lines.length);
-  var interiorTarget = Math.max(4, avg * 0.75);
-
-  guard = 20;
-  while (lines.length > 1 && guard-- > 0){
-    var changed = false;
-    var lensSnap = [];
-    for (i=0; i<lines.length; i++) lensSnap[i] = visualLength(lines[i]);
-    for (i=0; i<lines.length; i++){
-      if (lensSnap[i] >= interiorTarget) continue;
-      if (i < lines.length-1 && lensSnap[i+1] - lensSnap[i] >= 3){
-        if (stealForward(i)) { changed = true; break; }
-      } else if (i > 0 && lensSnap[i-1] - lensSnap[i] >= 3){
-        if (stealBackward(i)) { changed = true; break; }
-      }
-    }
-    if (!changed) break;
+    if (!pullFromPrev()) break;
   }
 
   return lines;
