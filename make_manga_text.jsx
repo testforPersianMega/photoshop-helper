@@ -58,7 +58,17 @@ function toStr(v){
   } catch(e){ return ""; }
 }
 function safeTrim(s){ return s.replace(/^[\s\u00A0]+/, "").replace(/[\s\u00A0]+$/, ""); }
-function normalizeWS(s){ return s.replace(/\s+/g, " "); }
+function collapseWhitespace(s){ return s.replace(/\s+/g, " "); }
+function normalizeWSKeepBreaks(s){
+  var str = toStr(s);
+  if (!str) return "";
+  var norm = str.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  var parts = norm.split("\n");
+  for (var i=0; i<parts.length; i++){
+    parts[i] = parts[i].replace(/[ \t\u00A0]+/g, " ");
+  }
+  return parts.join("\n");
+}
 
 // ===== Geometry helpers =====
 function solidBlack(){ var c=new SolidColor(); c.rgb.red=0;c.rgb.green=0;c.rgb.blue=0; return c; }
@@ -209,7 +219,7 @@ function estCharsPerLine(innerW, sizePx){ var avg=Math.max(3, sizePx*0.6); retur
 function chooseLineCount(totalChars, maxCPL, maxLines){ var need=Math.max(1, Math.ceil(totalChars/Math.max(1,maxCPL))); return Math.min(Math.max(need,1), Math.max(maxLines,1)); }
 function capsDiamond(L, baseCap){ var caps=[], mid=(L-1)/2.0; for (var i=0;i<L;i++){ var dist=Math.abs(i-mid)/Math.max(1,mid); var factor=1.2 - 0.5*dist; caps.push(Math.max(6, Math.floor(baseCap*factor))); } return caps; }
 function diamondWrap(text, innerW, innerH, sizePx){
-  var s = toStr(text); s = normalizeWS(s); s = safeTrim(s); if (!s) return "";
+  var s = toStr(text); s = collapseWhitespace(s); s = safeTrim(s); if (!s) return "";
   var words = s.split(" "); if (words.length <= 3) return s;
 
   var maxLines=estMaxLines(innerH,sizePx), maxCPL=estCharsPerLine(innerW,sizePx), totalChars=s.length;
@@ -293,8 +303,12 @@ var scaleY = (srcH && srcH>0) ? (dstH/srcH) : 1.0;
 for (var i=0; i<items.length; i++){
   var item = items[i]; if (!item) continue;
 
-  var raw = toStr(item.text); raw = normalizeWS(raw); raw = safeTrim(raw);
+  var raw = toStr(item.text);
+  raw = normalizeWSKeepBreaks(raw);
+  raw = safeTrim(raw);
   if (!raw) continue;
+
+  var hasManualBreaks = /\n/.test(raw);
 
   var c = deriveCenter(item); if(!c) continue;
   var cx = clampInt(c.x * scaleX), cy = clampInt(c.y * scaleY);
@@ -315,7 +329,8 @@ for (var i=0; i<items.length; i++){
 
   // 1) MULTI-LINE FIRST (smart diamond line breaks) in a fixed-size box
   var startSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
-  var wrapped = diamondWrap(raw, innerW, innerH, startSize);
+  var baseSeed = hasManualBreaks ? raw : collapseWhitespace(raw);
+  var wrapped = hasManualBreaks ? baseSeed : diamondWrap(baseSeed, innerW, innerH, startSize);
   var fontName = getFontForType(item.bubble_type || "Standard Speech");
 
   var lyr = createParagraphFullBox(doc, wrapped, fontName, startSize, cx, cy, innerW, innerH);
