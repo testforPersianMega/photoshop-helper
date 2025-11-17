@@ -458,20 +458,79 @@ function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, inn
 }
 
 // ===== Auto fit (shrink only) =====
-function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize) {
+function normalizeLinesForAutoFit(text) {
+  var str = toStr(text);
+  if (!str) return [];
+  var norm = str.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  var parts = norm.split("\n");
+  var cleaned = [];
+  for (var i = 0; i < parts.length; i++) {
+    var part = collapseWhitespace(parts[i]);
+    if (part.length) cleaned.push(part);
+  }
+  return cleaned;
+}
+
+function buildMeasureLayerFromLine(lyr, lineText) {
+  if (!lyr || !lineText) return null;
+  try {
+    var measureLayer = lyr.duplicate();
+    measureLayer.visible = false;
+    var measureTi = measureLayer.textItem;
+    measureTi.kind = TextType.POINTTEXT;
+    measureTi.contents = forceRTL(lineText);
+    measureTi.justification = Justification.CENTER;
+    measureTi.position = [0, 0];
+    return measureLayer;
+  } catch (e) {
+    return null;
+  }
+}
+
+function measureLineWidthFromLayer(measureLayer, sizePx) {
+  if (!measureLayer) return 0;
+  try {
+    var ti = measureLayer.textItem;
+    ti.size = sizePx;
+    var bounds = layerBoundsPx(measureLayer);
+    return bounds.width;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function cleanupMeasureLayer(layer) {
+  if (!layer) return;
+  try { layer.remove(); } catch (e) {}
+}
+
+function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines) {
   if (minSize === undefined) minSize = 10;
   if (maxSize === undefined) maxSize = 52;
 
-  log("  [autoFit] start size=" + ti.size + " innerW=" + innerW + " innerH=" + innerH);
+  var lines = normalizeLinesForAutoFit(rawTextForLines);
+  var longestLine = lines.length ? lines[0] : "";
+  for (var li = 1; li < lines.length; li++) {
+    if (lines[li].length > longestLine.length) longestLine = lines[li];
+  }
+  var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
+
+  log("  [autoFit] start size=" + ti.size + " innerW=" + innerW + " innerH=" + innerH +
+      (longestLine ? " longestLine=\"" + longestLine + "\"" : ""));
 
   for (var step = 0; step < 15; step++) {
     var b = layerBoundsPx(lyr);
     var w = b.width;
     var h = b.height;
-    var overflow = (w > innerW + 1 || h > innerH + 1);
+
+    var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, ti.size) : w;
+    var widthOverflow = (measuredLineWidth > innerW + 1);
+    var heightOverflow = (h > innerH + 1);
+    var overflow = widthOverflow || heightOverflow;
 
     log("    step " + step + " size=" + ti.size +
         " bounds=(" + w.toFixed(1) + "x" + h.toFixed(1) + ")" +
+        (measureLayer ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
         " overflow=" + overflow);
 
     if (!overflow) {
@@ -480,7 +539,8 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize) {
     }
 
     if (overflow && ti.size > minSize) {
-      var wRatio = innerW / Math.max(1, w);
+      var widthBasis = widthOverflow ? measuredLineWidth : innerW;
+      var wRatio = innerW / Math.max(1, widthBasis);
       var hRatio = innerH / Math.max(1, h);
       var scaleDown = Math.min(wRatio, hRatio) * 0.95;
       var newSizeDown = Math.max(minSize, Math.floor(ti.size * scaleDown));
@@ -496,6 +556,8 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize) {
     log("    cannot shrink further or no change; break.");
     break;
   }
+
+  cleanupMeasureLayer(measureLayer);
 
   var bb = layerBoundsPx(lyr);
   if (bb.height >= innerH - 2) {
@@ -634,7 +696,7 @@ for (var i=0; i<items.length; i++){
 
   var MIN_SIZE = 12;
   var MAX_SIZE = 60; // just a cap; we only shrink in autoFit
-  autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE);
+  autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
 
   var rot = deriveRotationDeg(item);
   if (rot && Math.abs(rot) > 0.001) {
