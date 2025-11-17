@@ -239,129 +239,159 @@ function deriveRotationDeg(item){
   return 0;
 }
 
-// ===== Diamond wrap =====
-function estMaxLines(innerH, sizePx){
-  var leading = Math.max(1, Math.floor(sizePx * 1.18));
-  return Math.max(1, Math.floor(innerH / leading));
-}
-function estCharsPerLine(innerW, sizePx){
-  var avg = Math.max(3, sizePx * 0.6);
-  return Math.max(8, Math.floor(innerW / avg));
-}
-function chooseLineCount(totalChars, maxCPL, maxLines){
-  var need = Math.max(1, Math.ceil(totalChars / Math.max(1, maxCPL)));
-  return Math.min(Math.max(need,1), Math.max(maxLines,1));
+// ===== Precise wrapping inspired by the Python helper =====
+function TextMeasureContext(doc, fontName, sizePx) {
+  this.doc = doc;
+  this.layer = doc.artLayers.add();
+  this.layer.name = "__measure__";
+  this.layer.kind = LayerKind.TEXT;
+  this.layer.opacity = 0;
+  var ti = this.layer.textItem;
+  ti.kind = TextType.POINTTEXT;
+  ti.contents = ".";
+  ti.font = fontName;
+  ti.size = sizePx;
+  ti.justification = Justification.CENTER;
+  ti.position = [0, 0];
+  this.textItem = ti;
+  this.size = sizePx;
 }
 
-function capsDiamond(L, baseCap){
-  var caps=[], mid=(L-1)/2.0;
-  for (var i=0;i<L;i++){
-    var dist = Math.abs(i-mid) / Math.max(1,mid);
-    var factor = 1.2 - 0.5*dist;
-    caps.push(Math.max(6, Math.floor(baseCap*factor)));
+TextMeasureContext.prototype.dispose = function(){
+  try { this.layer.remove(); } catch (e) {}
+};
+
+TextMeasureContext.prototype.measureWidth = function(text){
+  if (!text) return 0;
+  try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
+  this.layer.visible = true;
+  this.textItem.contents = text;
+  var bounds = layerBoundsPx(this.layer);
+  return bounds.width;
+};
+
+TextMeasureContext.prototype.lineHeight = function(){
+  return Math.max(1, Math.round(this.size * 1.18) + 4);
+};
+
+function splitWordsForLayout(text) {
+  var s = safeTrim(toStr(text));
+  if (!s) return [];
+  var raw = s.split(/\s+/);
+  var words = [];
+  for (var i = 0; i < raw.length; i++) {
+    if (raw[i]) words.push(raw[i]);
   }
-  return caps;
+  return words;
 }
 
-function rebalanceDiamondLines(lines){
-  function splitWords(str){
-    if (!str) return [];
-    return str.split(" ");
-  }
-  var maxIterations = 10;
-  for (var iter=0; iter<maxIterations; iter++){
-    var i, lens = [];
-    for (i=0; i<lines.length; i++) lens[i] = lines[i].length;
-
-    var maxIdx = 0;
-    for (i=1; i<lens.length; i++){
-      if (lens[i] > lens[maxIdx]) maxIdx = i;
+function greedyWrapWordsPixels(words, measureCtx, maxWidth) {
+  var lines = [];
+  var current = [];
+  if (!words || !words.length) return lines;
+  for (var i = 0; i < words.length; i++) {
+    var word = words[i];
+    var candidate = current.concat([word]).join(" ");
+    if (!current.length) {
+      current = [word];
+      continue;
     }
-    if (maxIdx !== 0 && maxIdx !== lines.length-1) break;
-    if (lines.length < 2) break;
-
-    if (maxIdx === 0){
-      var w0 = splitWords(lines[0]);
-      if (w0.length <= 1) break;
-      var moved = w0.pop();
-      lines[0] = w0.join(" ");
-      var w1 = splitWords(lines[1]);
-      w1.unshift(moved);
-      lines[1] = w1.join(" ");
-    } else if (maxIdx === lines.length-1){
-      var wl = splitWords(lines[lines.length-1]);
-      if (wl.length <= 1) break;
-      var moved2 = wl.shift();
-      lines[lines.length-1] = wl.join(" ");
-      var wp = splitWords(lines[lines.length-2]);
-      wp.push(moved2);
-      lines[lines.length-2] = wp.join(" ");
+    if (measureCtx.measureWidth(candidate) <= maxWidth) {
+      current.push(word);
+    } else {
+      lines.push(current);
+      current = [word];
     }
   }
+  if (current.length) lines.push(current);
   return lines;
 }
 
-// diamondWrap: supports optional forcedLines (from user \n count)
-function diamondWrap(text, innerW, innerH, sizePx, forcedLines){
-  var s = toStr(text);
-  s = collapseWhitespace(s);
-  s = safeTrim(s);
-  if (!s) return "";
+function rebalanceFirstLineStrict(linesWords, measureCtx, maxWidth, maxMoves) {
+  if (!linesWords || linesWords.length < 2) return linesWords;
+  var moves = 0;
+  var limit = maxMoves || 5;
+  while (moves < limit && linesWords[0].length > 1) {
+    var line1 = linesWords[0].join(" ");
+    var line2 = linesWords[1].join(" ");
+    var w1 = measureCtx.measureWidth(line1);
+    var w2 = measureCtx.measureWidth(line2);
+    if (w1 < w2) break;
 
-  var words = s.split(" ");
-  if (words.length <= 3) return s;
-
-  var maxLines   = estMaxLines(innerH, sizePx);
-  var maxCPL     = estCharsPerLine(innerW, sizePx);
-  var totalChars = s.length;
-
-  var L;
-  if (forcedLines && forcedLines > 0){
-    L = Math.min(maxLines, Math.max(1, forcedLines));
-  } else {
-    L = chooseLineCount(totalChars, maxCPL, maxLines);
+    var lastWord = linesWords[0][linesWords[0].length - 1];
+    var newLine1 = linesWords[0].slice(0, -1);
+    var newLine2 = [lastWord].concat(linesWords[1]);
+    var newLine1Text = newLine1.length ? newLine1.join(" ") : lastWord;
+    var newLine2Text = newLine2.join(" ");
+    var newW1 = measureCtx.measureWidth(newLine1Text);
+    var newW2 = measureCtx.measureWidth(newLine2Text);
+    if (newW2 > maxWidth) break;
+    linesWords[0] = newLine1.length ? newLine1 : [lastWord];
+    linesWords[1] = newLine2;
+    moves++;
   }
-  if (L <= 1) return s;
+  return linesWords;
+}
 
-  var caps;
-  if (L >= 4){
-    caps = capsDiamond(L, maxCPL);
-  } else {
-    caps = [];
-    for (var i=0;i<L;i++){
-      caps[i] = Math.max(6, Math.floor(maxCPL * 0.9));
+function rebalanceMiddleLines(wordsLines, measureCtx, maxWidth, passes) {
+  if (!wordsLines || wordsLines.length < 3) return wordsLines;
+  var maxPasses = passes || 4;
+  for (var pass = 0; pass < maxPasses; pass++) {
+    var changed = false;
+    var widths = [];
+    for (var i = 0; i < wordsLines.length; i++) {
+      widths[i] = measureCtx.measureWidth(wordsLines[i].join(" "));
     }
-  }
-
-  var lines = [];
-  var cur = [];
-  var curLen = 0;
-  var idx = 0;
-  var cap = caps[idx];
-
-  for (var w=0; w<words.length; w++){
-    var token = words[w];
-    var extra = (curLen === 0 ? token.length : token.length + 1);
-    if (curLen + extra <= cap){
-      cur.push(token);
-      curLen += extra;
-    } else {
-      lines.push(cur.join(" "));
-      cur = [token];
-      curLen = token.length;
-      idx = Math.min(idx+1, caps.length-1);
-      cap = caps[idx];
+    for (var j = 1; j < wordsLines.length - 1; j++) {
+      if (!wordsLines[j + 1] || !wordsLines[j + 1].length) continue;
+      var wCurrent = widths[j];
+      var wNext = widths[j + 1];
+      if (wCurrent >= wNext) continue;
+      var nextWord = wordsLines[j + 1][0];
+      var candidate = wordsLines[j].concat([nextWord]).join(" ");
+      var candidateWidth = measureCtx.measureWidth(candidate);
+      if (candidateWidth <= maxWidth) {
+        wordsLines[j].push(wordsLines[j + 1].shift());
+        widths[j] = candidateWidth;
+        widths[j + 1] = measureCtx.measureWidth(wordsLines[j + 1].join(" "));
+        changed = true;
+      }
     }
+    if (!changed) break;
   }
-  if (cur.length) lines.push(cur.join(" "));
+  return wordsLines;
+}
 
-  while (lines.length > L){
-    var last = lines.pop();
-    lines[lines.length-1] = lines[lines.length-1] + " " + last;
+function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight) {
+  var widthLimit = Math.max(1, maxWidth || 1);
+  var ctx = new TextMeasureContext(doc, fontName, sizePx);
+  try {
+    var words = splitWordsForLayout(text);
+    if (!words.length) return [];
+    var linesWords = greedyWrapWordsPixels(words, ctx, widthLimit);
+    if (maxHeight) {
+      var lh = ctx.lineHeight();
+      var maxLines = Math.max(1, Math.floor(maxHeight / lh));
+      if (linesWords.length > maxLines) {
+        // if overflow, caller can shrink font later
+      }
+    }
+    linesWords = rebalanceFirstLineStrict(linesWords, ctx, widthLimit, 5);
+    linesWords = rebalanceMiddleLines(linesWords, ctx, widthLimit, 4);
+    return linesWords;
+  } finally {
+    ctx.dispose();
   }
+}
 
-  lines = rebalanceDiamondLines(lines);
-  return lines.join("\r");
+function layoutBubble(text, doc, fontName, sizePx, maxWidth, maxHeight) {
+  var linesWords = layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight);
+  if (!linesWords.length) return "";
+  var parts = [];
+  for (var i = 0; i < linesWords.length; i++) {
+    parts.push(linesWords[i].join(" "));
+  }
+  return parts.join("\r");
 }
 
 // === Estimate SAFE starting font size (can grow up to 2x) ===
@@ -550,20 +580,26 @@ for (var i=0; i<items.length; i++){
   log("  bubbleSize=(" + bw + "x" + bh + ") pad=" + pad + " inner=(" + innerW + "x" + innerH + ")");
 
   var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
+  var fontName  = getFontForType(item.bubble_type || "Standard Speech");
 
   // build text seed
-  var forcedLines = null;
   var baseSeedText;
+  var wrappedForced;
   if (hasManualBreaks) {
     var manualParts = raw.split(/\n+/);
-    forcedLines = manualParts.length;
     baseSeedText = collapseWhitespace(manualParts.join(" "));
+    var manualLines = [];
+    for (var m = 0; m < manualParts.length; m++) {
+      manualLines.push(collapseWhitespace(manualParts[m]));
+    }
+    wrappedForced = manualLines.join("\r");
   } else {
     baseSeedText = collapseWhitespace(raw);
+    wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
+    if (!wrappedForced) wrappedForced = baseSeedText;
   }
 
   // --- first pass: respect manual breaks (if any) ---
-  var wrappedForced = diamondWrap(baseSeedText, innerW, innerH, baseSize, forcedLines);
   var sizeForced    = estimateSafeFontSizeForWrapped(wrappedForced, innerW, innerH, baseSize);
 
   // --- second pass: if manual breaks made font too small, ignore them ---
@@ -572,7 +608,7 @@ for (var i=0; i<items.length; i++){
 
   if (hasManualBreaks && sizeForced < baseSize * 0.7) {
     log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
-    var wrappedFree = diamondWrap(baseSeedText, innerW, innerH, baseSize, null);
+    var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
     var sizeFree    = estimateSafeFontSizeForWrapped(wrappedFree, innerW, innerH, baseSize);
     log("  alt reflow size=" + sizeFree);
     if (sizeFree > sizeForced) {
@@ -581,7 +617,6 @@ for (var i=0; i<items.length; i++){
     }
   }
 
-  var fontName  = getFontForType(item.bubble_type || "Standard Speech");
   log("  startSize(final)=" + finalSize + " font=" + fontName);
 
   var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH);
