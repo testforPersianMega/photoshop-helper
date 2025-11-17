@@ -457,7 +457,7 @@ function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, inn
   return lyr;
 }
 
-// ===== Auto fit (shrink only) =====
+// ===== Auto fit (shrink or grow using binary search) =====
 function normalizeLinesForAutoFit(text) {
   var str = toStr(text);
   if (!str) return [];
@@ -515,47 +515,55 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   }
   var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
 
-  log("  [autoFit] start size=" + ti.size + " innerW=" + innerW + " innerH=" + innerH +
+  log("  [autoFit] innerW=" + innerW + " innerH=" + innerH +
       (longestLine ? " longestLine=\"" + longestLine + "\"" : ""));
 
-  for (var step = 0; step < 15; step++) {
+  function sizeFits(sizePx) {
+    ti.size = sizePx;
+    try { ti.leading = Math.max(1, Math.floor(sizePx * 1.12)); } catch (e) {}
+    translateToCenter(lyr, cx, cy);
+
     var b = layerBoundsPx(lyr);
     var w = b.width;
     var h = b.height;
 
-    var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, ti.size) : w;
-    var widthOverflow = (measuredLineWidth > innerW + 1);
+    var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, sizePx) : w;
+    var widthOverflow  = (measuredLineWidth > innerW + 1);
     var heightOverflow = (h > innerH + 1);
     var overflow = widthOverflow || heightOverflow;
 
-    log("    step " + step + " size=" + ti.size +
+    log("    test size=" + sizePx +
         " bounds=(" + w.toFixed(1) + "x" + h.toFixed(1) + ")" +
         (measureLayer ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
         " overflow=" + overflow);
 
-    if (!overflow) {
-      log("    no overflow, done.");
-      break;
-    }
-
-    if (overflow && ti.size > minSize) {
-      var widthBasis = widthOverflow ? measuredLineWidth : innerW;
-      var wRatio = innerW / Math.max(1, widthBasis);
-      var hRatio = innerH / Math.max(1, h);
-      var scaleDown = Math.min(wRatio, hRatio) * 0.95;
-      var newSizeDown = Math.max(minSize, Math.floor(ti.size * scaleDown));
-
-      if (newSizeDown < ti.size) {
-        log("      shrink -> " + newSizeDown + " (scaleDown=" + scaleDown.toFixed(3) + ")");
-        ti.size = newSizeDown;
-        try { ti.leading = Math.max(1, Math.floor(newSizeDown * 1.12)); } catch (e) {}
-        translateToCenter(lyr, cx, cy);
-        continue;
-      }
-    }
-    log("    cannot shrink further or no change; break.");
-    break;
+    return !overflow;
   }
+
+  var lo = minSize;
+  var hi = maxSize;
+  var best = minSize;
+
+  if (ti.size >= minSize && ti.size <= maxSize) {
+    if (sizeFits(ti.size)) best = ti.size;
+  }
+
+  var maxSteps = 10;
+  var steps = 0;
+  while (lo <= hi && steps < maxSteps) {
+    var mid = Math.floor((lo + hi) / 2);
+    if (sizeFits(mid)) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+    steps++;
+  }
+
+  log("  [autoFit] finalSize=" + best);
+
+  sizeFits(best);
 
   cleanupMeasureLayer(measureLayer);
 
@@ -565,6 +573,7 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     log("  [autoFit] safety height increase to " + safeH);
     ti.height = safeH;
   }
+
   translateToCenter(lyr, cx, cy);
 }
 
@@ -662,11 +671,10 @@ for (var i=0; i<items.length; i++){
   }
 
   // --- first pass: respect manual breaks (if any) ---
-  var sizeForced    = estimateSafeFontSizeForWrapped(wrappedForced, innerW, innerH, baseSize);
+  var sizeForced = estimateSafeFontSizeForWrapped(wrappedForced, innerW, innerH, baseSize);
 
   // --- second pass: if manual breaks made font too small, ignore them ---
   var wrapped = wrappedForced;
-  var finalSize = sizeForced;
 
   if (hasManualBreaks && sizeForced < baseSize * 0.7) {
     log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
@@ -675,10 +683,10 @@ for (var i=0; i<items.length; i++){
     log("  alt reflow size=" + sizeFree);
     if (sizeFree > sizeForced) {
       wrapped   = wrappedFree;
-      finalSize = sizeFree;
     }
   }
 
+  var finalSize = baseSize;
   log("  startSize(final)=" + finalSize + " font=" + fontName);
 
   var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH);
@@ -695,7 +703,7 @@ for (var i=0; i<items.length; i++){
   translateToCenter(lyr, cx, cy);
 
   var MIN_SIZE = 12;
-  var MAX_SIZE = 60; // just a cap; we only shrink in autoFit
+  var MAX_SIZE = 60; // cap for binary search auto-fit
   autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
 
   var rot = deriveRotationDeg(item);
