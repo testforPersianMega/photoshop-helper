@@ -513,10 +513,16 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   for (var li = 1; li < lines.length; li++) {
     if (lines[li].length > longestLine.length) longestLine = lines[li];
   }
+  var lineCount = Math.max(1, lines.length || 1);
   var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
 
   log("  [autoFit] innerW=" + innerW + " innerH=" + innerH +
       (longestLine ? " longestLine=\"" + longestLine + "\"" : ""));
+
+  function estimateContentHeight(sizePx) {
+    var lineHeight = Math.max(1, Math.floor(sizePx * 1.18));
+    return lineHeight * lineCount;
+  }
 
   function sizeFits(sizePx) {
     ti.size = sizePx;
@@ -529,12 +535,14 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
 
     var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, sizePx) : w;
     var widthOverflow  = (measuredLineWidth > innerW + 1);
-    var heightOverflow = (h > innerH + 1);
+    var estHeight = estimateContentHeight(sizePx);
+    var heightOverflow = (estHeight > innerH + 1);
     var overflow = widthOverflow || heightOverflow;
 
     log("    test size=" + sizePx +
         " bounds=(" + w.toFixed(1) + "x" + h.toFixed(1) + ")" +
         (measureLayer ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
+        " estHeight=" + estHeight.toFixed(1) +
         " overflow=" + overflow);
 
     return !overflow;
@@ -561,17 +569,17 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     steps++;
   }
 
-  log("  [autoFit] finalSize=" + best);
+  var finalHeightEstimate = estimateContentHeight(best);
+  log("  [autoFit] finalSize=" + best + " estHeight=" + finalHeightEstimate);
 
   sizeFits(best);
 
   cleanupMeasureLayer(measureLayer);
 
-  var bb = layerBoundsPx(lyr);
-  if (bb.height >= innerH - 2) {
-    var safeH = Math.max(innerH + 30, bb.height + 10);
-    log("  [autoFit] safety height increase to " + safeH);
-    ti.height = safeH;
+  var safeHeight = Math.max(innerH, finalHeightEstimate + 20);
+  if (ti.height < safeHeight) {
+    ti.height = safeHeight;
+    log("  [autoFit] expand text box height to " + safeHeight);
   }
 
   translateToCenter(lyr, cx, cy);
