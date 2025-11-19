@@ -112,6 +112,29 @@ function getBasePixelLayer(doc){
   return null;
 }
 
+function ensureCleanupLayer(doc, baseLayer) {
+  if (!doc || !baseLayer) return null;
+  var CLEANUP_NAME = "ContentAware Cleanup";
+  try {
+    for (var i = 0; i < doc.layers.length; i++) {
+      var layer = doc.layers[i];
+      if (layer && layer.name === CLEANUP_NAME) {
+        return layer;
+      }
+    }
+  } catch (scanErr) {}
+
+  try {
+    var duplicate = baseLayer.duplicate();
+    duplicate.name = CLEANUP_NAME;
+    log('  created cleanup layer "' + CLEANUP_NAME + '" above background');
+    return duplicate;
+  } catch (dupErr) {
+    log('  ⚠️ unable to duplicate base layer for cleanup: ' + dupErr);
+  }
+  return null;
+}
+
 function contentAwareFillSelection(){
   try {
     var s2t = stringIDToTypeID;
@@ -230,7 +253,12 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
     log('  ⚠️ no base layer found for content-aware fill');
     return;
   }
-  doc.activeLayer = baseLayer;
+  var cleanupLayer = ensureCleanupLayer(doc, baseLayer);
+  if (!cleanupLayer) {
+    log('  ⚠️ could not prepare cleanup layer; skipping content-aware fill');
+    return;
+  }
+  doc.activeLayer = cleanupLayer;
   try { doc.selection.deselect(); } catch (e) {}
   if (segmentsInfo.source !== 'json') {
     log('  deriving removal segments from ' + segmentsInfo.source);
