@@ -101,6 +101,86 @@ function translateToCenter(lyr, cx, cy){
   lyr.translate(cx - c.x, cy - c.y);
 }
 
+function getBasePixelLayer(doc){
+  if (!doc) return null;
+  try {
+    if (doc.backgroundLayer) return doc.backgroundLayer;
+  } catch (e) {}
+  try {
+    if (doc.layers && doc.layers.length) return doc.layers[doc.layers.length - 1];
+  } catch (e2) {}
+  return null;
+}
+
+function contentAwareFillSelection(){
+  try {
+    var s2t = stringIDToTypeID;
+    var c2t = charIDToTypeID;
+    var desc = new ActionDescriptor();
+    desc.putEnumerated(c2t('Usng'), c2t('FlCn'), s2t('contentAware'));
+    desc.putUnitDouble(c2t('Opct'), c2t('#Prc'), 100.0);
+    desc.putEnumerated(c2t('Md  '), c2t('BlnM'), c2t('Nrml'));
+    desc.putBoolean(c2t('PrsT'), false);
+    executeAction(c2t('Fl  '), desc, DialogModes.NO);
+    return true;
+  } catch (e) {
+    log('  ⚠️ content aware fill failed: ' + e);
+    return false;
+  }
+}
+
+function selectSegments(doc, segments, scaleX, scaleY){
+  if (!doc || !segments || !segments.length) return false;
+  var selectionMade = false;
+  for (var i = 0; i < segments.length; i++) {
+    var seg = segments[i];
+    if (!seg) continue;
+    var x1 = Number(seg.x_min);
+    var x2 = Number(seg.x_max);
+    var y1 = Number(seg.y_min);
+    var y2 = Number(seg.y_max);
+    if (isNaN(x1) || isNaN(x2) || isNaN(y1) || isNaN(y2)) continue;
+    var left = Math.min(x1, x2) * scaleX;
+    var right = Math.max(x1, x2) * scaleX;
+    var top = Math.min(y1, y2) * scaleY;
+    var bottom = Math.max(y1, y2) * scaleY;
+    if ((right - left) < 1 || (bottom - top) < 1) continue;
+    var region = [
+      [left, top],
+      [right, top],
+      [right, bottom],
+      [left, bottom]
+    ];
+    try {
+      doc.selection.select(region, selectionMade ? SelectionType.EXTEND : SelectionType.REPLACE, 0, false);
+      selectionMade = true;
+    } catch (e) {}
+  }
+  return selectionMade;
+}
+
+function removeOldTextSegments(doc, item, scaleX, scaleY){
+  if (!item || !item.segments || !item.segments.length) return;
+  var baseLayer = getBasePixelLayer(doc);
+  if (!baseLayer) {
+    log('  ⚠️ no base layer found for content-aware fill');
+    return;
+  }
+  doc.activeLayer = baseLayer;
+  try { doc.selection.deselect(); } catch (e) {}
+  var selectionMade = selectSegments(doc, item.segments, scaleX, scaleY);
+  if (!selectionMade) {
+    log('  ⚠️ segments provided but no valid selection could be made');
+    return;
+  }
+  log('  removing original text via content-aware fill over ' + item.segments.length + ' segments');
+  var filled = contentAwareFillSelection();
+  try { doc.selection.deselect(); } catch (e2) {}
+  if (!filled) {
+    log('  ⚠️ content-aware fill skipped due to error');
+  }
+}
+
 // ===== Centers/boxes =====
 function polygonCentroid(points){
   var n = points.length;
@@ -642,6 +722,8 @@ for (var i=0; i<items.length; i++){
   }
   var cx = clampInt(c.x * scaleX), cy = clampInt(c.y * scaleY);
   log("  center=(" + cx + "," + cy + ")");
+
+  removeOldTextSegments(doc, item, scaleX, scaleY);
 
   var box = deriveBox(item);
   var PAD_FRAC = 0.10, MIN_W = 70, MIN_H = 60;
