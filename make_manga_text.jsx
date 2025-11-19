@@ -206,28 +206,65 @@ function contentAwareFillSelection(){
   }
 }
 
+function segmentPoints(seg) {
+  if (!seg) return null;
+  if (seg.points && seg.points.length) return seg.points;
+  if (seg.polygon && seg.polygon.length) return seg.polygon;
+  if (seg.vertices && seg.vertices.length) return seg.vertices;
+  if (seg.coords && seg.coords.length) return seg.coords;
+  if (seg.path && seg.path.length) return seg.path;
+  if (seg.length && seg[0] && (seg[0].length >= 2 || (typeof seg[0].x === 'number' && typeof seg[0].y === 'number')))
+    return seg;
+  return null;
+}
+
+function buildRegionFromSegment(seg, scaleX, scaleY) {
+  if (!seg) return null;
+  var pts = segmentPoints(seg);
+  if (pts && pts.length >= 3) {
+    var regionPts = [];
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (!p) continue;
+      var px, py;
+      if (p.length && p.length >= 2) {
+        px = Number(p[0]);
+        py = Number(p[1]);
+      } else {
+        px = Number(p.x);
+        py = Number(p.y);
+      }
+      if (isNaN(px) || isNaN(py)) continue;
+      regionPts.push([px * scaleX, py * scaleY]);
+    }
+    if (regionPts.length >= 3) return regionPts;
+  }
+
+  var x1 = Number(seg.x_min);
+  var x2 = Number(seg.x_max);
+  var y1 = Number(seg.y_min);
+  var y2 = Number(seg.y_max);
+  if (isNaN(x1) || isNaN(x2) || isNaN(y1) || isNaN(y2)) return null;
+  var left = Math.min(x1, x2) * scaleX;
+  var right = Math.max(x1, x2) * scaleX;
+  var top = Math.min(y1, y2) * scaleY;
+  var bottom = Math.max(y1, y2) * scaleY;
+  if ((right - left) < 1 || (bottom - top) < 1) return null;
+  return [
+    [left, top],
+    [right, top],
+    [right, bottom],
+    [left, bottom]
+  ];
+}
+
 function selectSegments(doc, segments, scaleX, scaleY){
   if (!doc || !segments || !segments.length) return false;
   var selectionMade = false;
   for (var i = 0; i < segments.length; i++) {
     var seg = segments[i];
-    if (!seg) continue;
-    var x1 = Number(seg.x_min);
-    var x2 = Number(seg.x_max);
-    var y1 = Number(seg.y_min);
-    var y2 = Number(seg.y_max);
-    if (isNaN(x1) || isNaN(x2) || isNaN(y1) || isNaN(y2)) continue;
-    var left = Math.min(x1, x2) * scaleX;
-    var right = Math.max(x1, x2) * scaleX;
-    var top = Math.min(y1, y2) * scaleY;
-    var bottom = Math.max(y1, y2) * scaleY;
-    if ((right - left) < 1 || (bottom - top) < 1) continue;
-    var region = [
-      [left, top],
-      [right, top],
-      [right, bottom],
-      [left, bottom]
-    ];
+    var region = buildRegionFromSegment(seg, scaleX, scaleY);
+    if (!region) continue;
     try {
       doc.selection.select(region, selectionMade ? SelectionType.EXTEND : SelectionType.REPLACE, 0, false);
       selectionMade = true;
