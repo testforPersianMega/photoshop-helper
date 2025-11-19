@@ -18,6 +18,8 @@ var outputPSD   = File(scriptFolder + "/manga_output.psd");
 // ===== DEBUG + FILE LOGGING =====
 var DEBUG = true;
 var LOG_TO_FILE = true;
+var DEBUG_CONTENT_AWARE = true; // highlight removal selections for debugging
+var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
 
 function initLog() {
@@ -133,6 +135,58 @@ function ensureCleanupLayer(doc, baseLayer) {
     log('  ⚠️ unable to duplicate base layer for cleanup: ' + dupErr);
   }
   return null;
+}
+
+function buildContentAwareDebugColor() {
+  var c = new SolidColor();
+  var cfg = CONTENT_AWARE_DEBUG_COLOR || {};
+  c.rgb.red   = (typeof cfg.red === 'number')   ? cfg.red   : 255;
+  c.rgb.green = (typeof cfg.green === 'number') ? cfg.green : 0;
+  c.rgb.blue  = (typeof cfg.blue === 'number')  ? cfg.blue  : 0;
+  return c;
+}
+
+function createSelectionDebugLayer(doc) {
+  if (!doc) return null;
+  try {
+    var layer = doc.artLayers.add();
+    layer.name = "ContentAware Selection Debug";
+    layer.blendMode = BlendMode.NORMAL;
+    var cfgOpacity = CONTENT_AWARE_DEBUG_COLOR && CONTENT_AWARE_DEBUG_COLOR.opacity;
+    layer.opacity = (typeof cfgOpacity === 'number') ? cfgOpacity : 35;
+    try {
+      if (doc.layers && doc.layers.length) {
+        layer.move(doc.layers[0], ElementPlacement.PLACEBEFORE);
+      }
+    } catch (moveErr) {}
+    return layer;
+  } catch (e) {
+    log('  ⚠️ unable to create selection debug layer: ' + e);
+  }
+  return null;
+}
+
+function highlightSelectionForDebug(doc, cleanupLayer) {
+  if (!DEBUG_CONTENT_AWARE) return null;
+  if (!doc) return null;
+  var debugLayer = createSelectionDebugLayer(doc);
+  if (!debugLayer) return null;
+  try {
+    doc.activeLayer = debugLayer;
+    var color = buildContentAwareDebugColor();
+    try {
+      doc.selection.fill(color);
+    } catch (fillErr) {
+      log('  ⚠️ unable to fill debug selection: ' + fillErr);
+    }
+  } catch (layerErr) {
+    log('  ⚠️ could not activate debug layer: ' + layerErr);
+  }
+  try {
+    if (cleanupLayer) doc.activeLayer = cleanupLayer;
+  } catch (restoreErr) {}
+  log('  [debug] highlighted removal selection on "' + debugLayer.name + '"');
+  return debugLayer;
 }
 
 function contentAwareFillSelection(){
@@ -268,6 +322,7 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
     log('  ⚠️ segments provided but no valid selection could be made');
     return;
   }
+  highlightSelectionForDebug(doc, cleanupLayer);
   log('  removing original text via content-aware fill over ' + segmentsInfo.segments.length + ' segments');
   var filled = contentAwareFillSelection();
   try { doc.selection.deselect(); } catch (e2) {}
