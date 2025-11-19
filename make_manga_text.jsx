@@ -159,8 +159,72 @@ function selectSegments(doc, segments, scaleX, scaleY){
   return selectionMade;
 }
 
+function boxToSegment(box, pad){
+  if (!box) return null;
+  var p = (typeof pad === "number") ? pad : 0;
+  return {
+    x_min: Number(box.left)   - p,
+    x_max: Number(box.right)  + p,
+    y_min: Number(box.top)    - p,
+    y_max: Number(box.bottom) + p
+  };
+}
+
+function polygonToBox(points){
+  if (!points || points.length < 1) return null;
+  var minX = points[0][0], maxX = points[0][0];
+  var minY = points[0][1], maxY = points[0][1];
+  for (var i = 1; i < points.length; i++) {
+    var pt = points[i];
+    if (!pt || pt.length < 2) continue;
+    if (pt[0] < minX) minX = pt[0];
+    if (pt[0] > maxX) maxX = pt[0];
+    if (pt[1] < minY) minY = pt[1];
+    if (pt[1] > maxY) maxY = pt[1];
+  }
+  return { left:minX, top:minY, right:maxX, bottom:maxY };
+}
+
+function collectRemovalSegments(item){
+  var result = { segments: [], source: "none" };
+  if (!item) return result;
+  if (item.segments && item.segments.length) {
+    result.segments = item.segments;
+    result.source = "json";
+    return result;
+  }
+
+  var derived = [];
+  var pad = 2;
+  var box = null;
+
+  if (item.polygon_text && item.polygon_text.length >= 3) {
+    box = polygonToBox(item.polygon_text);
+    result.source = "polygon_text";
+  } else if (item.bbox_text) {
+    box = item.bbox_text;
+    result.source = "bbox_text";
+  } else if (item.bbox_bubble) {
+    box = item.bbox_bubble;
+    result.source = "bbox_bubble";
+  }
+
+  if (box) {
+    var seg = boxToSegment(box, pad);
+    if (seg) derived.push(seg);
+  }
+
+  result.segments = derived;
+  if (!derived.length) result.source = "none";
+  return result;
+}
+
 function removeOldTextSegments(doc, item, scaleX, scaleY){
-  if (!item || !item.segments || !item.segments.length) return;
+  var segmentsInfo = collectRemovalSegments(item);
+  if (!segmentsInfo.segments.length) {
+    log('  ⚠️ no segments available for content-aware fill');
+    return;
+  }
   var baseLayer = getBasePixelLayer(doc);
   if (!baseLayer) {
     log('  ⚠️ no base layer found for content-aware fill');
@@ -168,12 +232,15 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
   }
   doc.activeLayer = baseLayer;
   try { doc.selection.deselect(); } catch (e) {}
-  var selectionMade = selectSegments(doc, item.segments, scaleX, scaleY);
+  if (segmentsInfo.source !== 'json') {
+    log('  deriving removal segments from ' + segmentsInfo.source);
+  }
+  var selectionMade = selectSegments(doc, segmentsInfo.segments, scaleX, scaleY);
   if (!selectionMade) {
     log('  ⚠️ segments provided but no valid selection could be made');
     return;
   }
-  log('  removing original text via content-aware fill over ' + item.segments.length + ' segments');
+  log('  removing original text via content-aware fill over ' + segmentsInfo.segments.length + ' segments');
   var filled = contentAwareFillSelection();
   try { doc.selection.deselect(); } catch (e2) {}
   if (!filled) {
