@@ -11,7 +11,7 @@ app.preferences.rulerUnits = Units.PIXELS;
 
 // ===== USER CONFIG =====
 var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker");  // change if needed
-var imageFile   = File(scriptFolder + "/RCO018_1462962423.jpg");
+var imageFile   = File(scriptFolder + "/94107d26-f530-4994-8a94-e48a6e70777c.png");
 var jsonFile    = File(scriptFolder + "/positions.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 
