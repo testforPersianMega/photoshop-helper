@@ -15,6 +15,15 @@ var imageFile   = File(scriptFolder + "/94107d26-f530-4994-8a94-e48a6e70777c.png
 var jsonFile    = File(scriptFolder + "/positions.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 
+// Optional batch mode: process an entire chapter
+// Put all page images inside `chapterImagesFolder` and a matching JSON per image
+// (same base name, .json extension) inside `chapterJsonFolder`.
+// Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
+var PROCESS_WHOLE_CHAPTER = false;
+var chapterImagesFolder  = Folder(scriptFolder + "/chapter_images");
+var chapterJsonFolder    = Folder(scriptFolder + "/chapter_json");
+var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
+
 // ===== DEBUG + FILE LOGGING =====
 var DEBUG = true;
 var LOG_TO_FILE = true;
@@ -853,148 +862,209 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   translateToCenter(lyr, cx, cy);
 }
 
-// ===== OPEN IMAGE =====
-if (!imageFile.exists) {
-  alert("❌ Image not found:\n" + imageFile.fsName);
-  throw new Error("Image file not found");
-}
-log("Opening image: " + imageFile.fsName);
-var doc = app.open(imageFile);
-
-// ===== READ JSON =====
-if (!jsonFile.exists) {
-  alert("❌ JSON not found:\n" + jsonFile.fsName);
-  throw new Error("JSON file not found");
-}
-jsonFile.open("r");
-var jsonText = jsonFile.read();
-jsonFile.close();
-log("Loaded JSON: " + jsonFile.fsName);
-var data = JSON.parse(jsonText);
-
-// Accept { image_size, items } OR legacy array
-var items=null, srcW=null, srcH=null;
-if (data && data.items && data.image_size){
-  items=data.items; srcW=data.image_size.width; srcH=data.image_size.height;
-} else if (data instanceof Array){
-  items=data; srcW=doc.width.as('px'); srcH=doc.height.as('px');
-} else {
-  throw new Error("JSON must contain { image_size, items } or be an array");
+function ensureFolderExists(folder) {
+  if (!folder) return null;
+  try {
+    if (!folder.exists) folder.create();
+  } catch (e) {}
+  return folder;
 }
 
-// ===== SCALE FACTORS =====
-var dstW = doc.width.as('px'), dstH = doc.height.as('px');
-var scaleX = (srcW && srcW>0) ? (dstW/srcW) : 1.0;
-var scaleY = (srcH && srcH>0) ? (dstH/srcH) : 1.0;
-log("Scale factors: src=(" + srcW + "x" + srcH + ") dst=(" + dstW + "x" + dstH + ") scaleX=" + scaleX + " scaleY=" + scaleY);
-
-// ===== PROCESS =====
-for (var i=0; i<items.length; i++){
-  var item = items[i];
-  if (!item) continue;
-
-  var raw = toStr(item.text);
-  raw = normalizeWSKeepBreaks(raw);
-  raw = safeTrim(raw);
-  if (!raw) continue;
-
-  var preview = raw.length > 40 ? raw.substr(0,40) + "..." : raw;
-  log("Item " + i + " bubble_id=" + (item.bubble_id || "N/A") + " text=\"" + preview + "\"");
-
-  var hasManualBreaks = /\n/.test(raw);
-
-  var c = deriveCenter(item);
-  if (!c) {
-    log("  -> no center, skipping");
-    continue;
+function processImageWithJson(imageFile, jsonFile, outputPSD) {
+  // ===== OPEN IMAGE =====
+  if (!imageFile.exists) {
+    alert("❌ Image not found:\n" + imageFile.fsName);
+    throw new Error("Image file not found");
   }
-  var cx = clampInt(c.x * scaleX), cy = clampInt(c.y * scaleY);
-  log("  center=(" + cx + "," + cy + ")");
+  log("Opening image: " + imageFile.fsName);
+  var doc = app.open(imageFile);
 
-  removeOldTextSegments(doc, item, scaleX, scaleY);
+  // ===== READ JSON =====
+  if (!jsonFile.exists) {
+    alert("❌ JSON not found:\n" + jsonFile.fsName);
+    throw new Error("JSON file not found");
+  }
+  jsonFile.open("r");
+  var jsonText = jsonFile.read();
+  jsonFile.close();
+  log("Loaded JSON: " + jsonFile.fsName);
+  var data = JSON.parse(jsonText);
 
-  var box = deriveBox(item);
-  var PAD_FRAC = 0.10, MIN_W = 70, MIN_H = 60;
-
-  var phys = box
-    ? { left:box.left*scaleX, top:box.top*scaleY, right:box.right*scaleX, bottom:box.bottom*scaleY }
-    : { left:cx-120, top:cy-100, right:cx+120, bottom:cy+100 };
-
-  var bw = Math.max(MIN_W, phys.right - phys.left);
-  var bh = Math.max(MIN_H, phys.bottom - phys.top);
-  var pad = Math.round(Math.min(bw, bh) * PAD_FRAC);
-
-  var innerW = Math.max(20, bw - 2*pad);
-  var innerH = Math.max(20, bh - 2*pad);
-  log("  bubbleSize=(" + bw + "x" + bh + ") pad=" + pad + " inner=(" + innerW + "x" + innerH + ")");
-
-  var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
-  var fontName  = getFontForType(item.bubble_type || "Standard Speech");
-
-  // build text seed
-  var baseSeedText;
-  var wrappedForced;
-  if (hasManualBreaks) {
-    var manualParts = raw.split(/\n+/);
-    baseSeedText = collapseWhitespace(manualParts.join(" "));
-    var manualLines = [];
-    for (var m = 0; m < manualParts.length; m++) {
-      manualLines.push(collapseWhitespace(manualParts[m]));
-    }
-    wrappedForced = manualLines.join("\r");
+  // Accept { image_size, items } OR legacy array
+  var items=null, srcW=null, srcH=null;
+  if (data && data.items && data.image_size){
+    items=data.items; srcW=data.image_size.width; srcH=data.image_size.height;
+  } else if (data instanceof Array){
+    items=data; srcW=doc.width.as('px'); srcH=doc.height.as('px');
   } else {
-    baseSeedText = collapseWhitespace(raw);
-    wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
-    if (!wrappedForced) wrappedForced = baseSeedText;
+    throw new Error("JSON must contain { image_size, items } or be an array");
   }
 
-  // --- first pass: respect manual breaks (if any) ---
-  var sizeForced = estimateSafeFontSizeForWrapped(wrappedForced, innerW, innerH, baseSize);
+  // ===== SCALE FACTORS =====
+  var dstW = doc.width.as('px'), dstH = doc.height.as('px');
+  var scaleX = (srcW && srcW>0) ? (dstW/srcW) : 1.0;
+  var scaleY = (srcH && srcH>0) ? (dstH/srcH) : 1.0;
+  log("Scale factors: src=(" + srcW + "x" + srcH + ") dst=(" + dstW + "x" + dstH + ") scaleX=" + scaleX + " scaleY=" + scaleY);
 
-  // --- second pass: if manual breaks made font too small, ignore them ---
-  var wrapped = wrappedForced;
+  // ===== PROCESS =====
+  for (var i=0; i<items.length; i++){
+    var item = items[i];
+    if (!item) continue;
 
-  if (hasManualBreaks && sizeForced < baseSize * 0.7) {
-    log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
-    var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
-    var sizeFree    = estimateSafeFontSizeForWrapped(wrappedFree, innerW, innerH, baseSize);
-    log("  alt reflow size=" + sizeFree);
-    if (sizeFree > sizeForced) {
-      wrapped   = wrappedFree;
+    var raw = toStr(item.text);
+    raw = normalizeWSKeepBreaks(raw);
+    raw = safeTrim(raw);
+    if (!raw) continue;
+
+    var preview = raw.length > 40 ? raw.substr(0,40) + "..." : raw;
+    log("Item " + i + " bubble_id=" + (item.bubble_id || "N/A") + " text=\"" + preview + "\"");
+
+    var hasManualBreaks = /\n/.test(raw);
+
+    var c = deriveCenter(item);
+    if (!c) {
+      log("  -> no center, skipping");
+      continue;
     }
+    var cx = clampInt(c.x * scaleX), cy = clampInt(c.y * scaleY);
+    log("  center=(" + cx + "," + cy + ")");
+
+    removeOldTextSegments(doc, item, scaleX, scaleY);
+
+    var box = deriveBox(item);
+    var PAD_FRAC = 0.10, MIN_W = 70, MIN_H = 60;
+
+    var phys = box
+      ? { left:box.left*scaleX, top:box.top*scaleY, right:box.right*scaleX, bottom:box.bottom*scaleY }
+      : { left:cx-120, top:cy-100, right:cx+120, bottom:cy+100 };
+
+    var bw = Math.max(MIN_W, phys.right - phys.left);
+    var bh = Math.max(MIN_H, phys.bottom - phys.top);
+    var pad = Math.round(Math.min(bw, bh) * PAD_FRAC);
+
+    var innerW = Math.max(20, bw - 2*pad);
+    var innerH = Math.max(20, bh - 2*pad);
+    log("  bubbleSize=(" + bw + "x" + bh + ") pad=" + pad + " inner=(" + innerW + "x" + innerH + ")");
+
+    var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
+    var fontName  = getFontForType(item.bubble_type || "Standard Speech");
+
+    // build text seed
+    var baseSeedText;
+    var wrappedForced;
+    if (hasManualBreaks) {
+      var manualParts = raw.split(/\n+/);
+      baseSeedText = collapseWhitespace(manualParts.join(" "));
+      var manualLines = [];
+      for (var m = 0; m < manualParts.length; m++) {
+        manualLines.push(collapseWhitespace(manualParts[m]));
+      }
+      wrappedForced = manualLines.join("\r");
+    } else {
+      baseSeedText = collapseWhitespace(raw);
+      wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
+      if (!wrappedForced) wrappedForced = baseSeedText;
+    }
+
+    // --- first pass: respect manual breaks (if any) ---
+    var sizeForced = estimateSafeFontSizeForWrapped(wrappedForced, innerW, innerH, baseSize);
+
+    // --- second pass: if manual breaks made font too small, ignore them ---
+    var wrapped = wrappedForced;
+
+    if (hasManualBreaks && sizeForced < baseSize * 0.7) {
+      log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
+      var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
+      var sizeFree    = estimateSafeFontSizeForWrapped(wrappedFree, innerW, innerH, baseSize);
+      log("  alt reflow size=" + sizeFree);
+      if (sizeFree > sizeForced) {
+        wrapped   = wrappedFree;
+      }
+    }
+
+    var finalSize = baseSize;
+    log("  startSize(final)=" + finalSize + " font=" + fontName);
+
+    var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH);
+    var ti  = lyr.textItem;
+
+    app.activeDocument.activeLayer = lyr;
+    applyParagraphDirectionRTL();
+    trySetMEEveryLineComposer();
+
+    ti = lyr.textItem;
+    ti.justification = Justification.CENTER;
+
+    ti.position = [cx - ti.width/2, cy - ti.height/2];
+    translateToCenter(lyr, cx, cy);
+
+    var MIN_SIZE = 12;
+    var MAX_SIZE = 60; // cap for binary search auto-fit
+    autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
+
+    var rot = deriveRotationDeg(item);
+    if (rot && Math.abs(rot) > 0.001) {
+      log("  rotation=" + rot);
+      lyr.rotate(rot, AnchorPosition.MIDDLECENTER);
+    }
+    translateToCenter(lyr, cx, cy);
   }
 
-  var finalSize = baseSize;
-  log("  startSize(final)=" + finalSize + " font=" + fontName);
-
-  var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH);
-  var ti  = lyr.textItem;
-
-  app.activeDocument.activeLayer = lyr;
-  applyParagraphDirectionRTL();
-  trySetMEEveryLineComposer();
-
-  ti = lyr.textItem;
-  ti.justification = Justification.CENTER;
-
-  ti.position = [cx - ti.width/2, cy - ti.height/2];
-  translateToCenter(lyr, cx, cy);
-
-  var MIN_SIZE = 12;
-  var MAX_SIZE = 60; // cap for binary search auto-fit
-  autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
-
-  var rot = deriveRotationDeg(item);
-  if (rot && Math.abs(rot) > 0.001) {
-    log("  rotation=" + rot);
-    lyr.rotate(rot, AnchorPosition.MIDDLECENTER);
-  }
-  translateToCenter(lyr, cx, cy);
+  // ===== SAVE =====
+  var psdSaveOptions = new PhotoshopSaveOptions();
+  doc.saveAs(outputPSD, psdSaveOptions, true);
+  doc.close(SaveOptions.DONOTSAVECHANGES);
+  log("✅ Done! Saved: " + outputPSD.fsName);
+  alert("✅ Done! Saved: " + outputPSD.fsName);
 }
 
-// ===== SAVE =====
-var psdSaveOptions = new PhotoshopSaveOptions();
-doc.saveAs(outputPSD, psdSaveOptions, true);
-doc.close(SaveOptions.DONOTSAVECHANGES);
-log("✅ Done! Saved: " + outputPSD.fsName);
-alert("✅ Done! Saved: " + outputPSD.fsName);
+function listImageFiles(folder) {
+  if (!folder || !folder.exists) return [];
+  return folder.getFiles(function (f) {
+    return f instanceof File && /\.(png|jpe?g|tif?f?|psd)$/i.test(f.name);
+  });
+}
+
+function runChapterBatch() {
+  if (!chapterImagesFolder.exists) {
+    alert("❌ Chapter images folder not found:\n" + chapterImagesFolder.fsName);
+    throw new Error("Chapter images folder not found");
+  }
+  if (!chapterJsonFolder.exists) {
+    alert("❌ Chapter JSON folder not found:\n" + chapterJsonFolder.fsName);
+    throw new Error("Chapter JSON folder not found");
+  }
+
+  ensureFolderExists(chapterOutputFolder);
+
+  var images = listImageFiles(chapterImagesFolder);
+  if (!images.length) {
+    alert("❌ No images found in:\n" + chapterImagesFolder.fsName);
+    throw new Error("No images to process");
+  }
+
+  log("Starting chapter batch: " + images.length + " page(s)");
+
+  for (var i = 0; i < images.length; i++) {
+    var img = images[i];
+    var base = img.name.replace(/\.[^.]+$/, "");
+    var jsonPath = File(chapterJsonFolder + "/" + base + ".json");
+
+    if (!jsonPath.exists) {
+      log("⚠️ Skipping " + img.name + " (missing JSON: " + jsonPath.fsName + ")");
+      continue;
+    }
+
+    var outPath = File(chapterOutputFolder + "/" + base + "_output.psd");
+    processImageWithJson(img, jsonPath, outPath);
+  }
+
+  alert("✅ Chapter batch complete! Saved to: " + chapterOutputFolder.fsName);
+}
+
+// ===== ENTRY POINT =====
+if (PROCESS_WHOLE_CHAPTER) {
+  runChapterBatch();
+} else {
+  processImageWithJson(imageFile, jsonFile, outputPSD);
+}
