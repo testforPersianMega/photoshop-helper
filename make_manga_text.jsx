@@ -18,7 +18,7 @@ var outputPSD   = File(scriptFolder + "/manga_output.psd");
 // ===== DEBUG + FILE LOGGING =====
 var DEBUG = true;
 var LOG_TO_FILE = true;
-var DEBUG_CONTENT_AWARE = true; // highlight removal selections for debugging
+var DEBUG_CONTENT_AWARE = false; // highlight removal selections for debugging
 var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
 
@@ -393,8 +393,9 @@ function deriveCenter(item){
   if (item && item.polygon_text && item.polygon_text.length>=3){
     var c = polygonCentroid(item.polygon_text); if (c) return c;
   }
-  if (item && item.center && typeof item.center.x==="number" && typeof item.center.y==="number")
+  if (item && item.center && typeof item.center.x==="number" && typeof item.center.y==="number") 
     return { x:item.center.x, y:item.center.y };
+  
   if (item && item.bbox_text){
     var bt=item.bbox_text;
     return { x:(bt.left+bt.right)/2, y:(bt.top+bt.bottom)/2 };
