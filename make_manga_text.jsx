@@ -283,13 +283,14 @@ function selectSegments(doc, segments, scaleX, scaleY){
 }
 
 function boxToSegment(box, pad){
-  if (!box) return null;
+  var norm = normalizeBox(box);
+  if (!norm) return null;
   var p = (typeof pad === "number") ? pad : 0;
   return {
-    x_min: Number(box.left)   - p,
-    x_max: Number(box.right)  + p,
-    y_min: Number(box.top)    - p,
-    y_max: Number(box.bottom) + p
+    x_min: norm.left   - p,
+    x_max: norm.right  + p,
+    y_min: norm.top    - p,
+    y_max: norm.bottom + p
   };
 }
 
@@ -306,6 +307,36 @@ function polygonToBox(points){
     if (pt[1] > maxY) maxY = pt[1];
   }
   return { left:minX, top:minY, right:maxX, bottom:maxY };
+}
+
+function normalizeBox(box) {
+  if (!box) return null;
+
+  function isNum(v) { return typeof v === "number" && !isNaN(v); }
+
+  var hasLTRB = isNum(box.left) && isNum(box.top) && isNum(box.right) && isNum(box.bottom);
+  if (hasLTRB) {
+    return {
+      left: Number(box.left),
+      top: Number(box.top),
+      right: Number(box.right),
+      bottom: Number(box.bottom)
+    };
+  }
+
+  var hasMinMax = isNum(box.x_min) && isNum(box.x_max) && isNum(box.y_min) && isNum(box.y_max);
+  if (hasMinMax) {
+    var x1 = Number(box.x_min), x2 = Number(box.x_max);
+    var y1 = Number(box.y_min), y2 = Number(box.y_max);
+    return {
+      left: Math.min(x1, x2),
+      right: Math.max(x1, x2),
+      top: Math.min(y1, y2),
+      bottom: Math.max(y1, y2)
+    };
+  }
+
+  return null;
 }
 
 function collectRemovalSegments(item){
@@ -402,24 +433,28 @@ function deriveCenter(item){
   if (item && item.polygon_text && item.polygon_text.length>=3){
     var c = polygonCentroid(item.polygon_text); if (c) return c;
   }
-  if (item && item.center && typeof item.center.x==="number" && typeof item.center.y==="number") 
+  if (item && item.center && typeof item.center.x==="number" && typeof item.center.y==="number")
     return { x:item.center.x, y:item.center.y };
-  
+
   if (item && item.bbox_text){
-    var bt=item.bbox_text;
-    return { x:(bt.left+bt.right)/2, y:(bt.top+bt.bottom)/2 };
+    var bt=normalizeBox(item.bbox_text);
+    if (bt) return { x:(bt.left+bt.right)/2, y:(bt.top+bt.bottom)/2 };
   }
   if (item && item.bbox_bubble){
-    var bb=item.bbox_bubble;
-    return { x:(bb.left+bb.right)/2, y:(bb.top+bb.bottom)/2 };
+    var bb=normalizeBox(item.bbox_bubble);
+    if (bb) return { x:(bb.left+bb.right)/2, y:(bb.top+bb.bottom)/2 };
   }
   return null;
 }
 function deriveBox(item){
-  if (item && item.bbox_text)
-    return { left:item.bbox_text.left, top:item.bbox_text.top, right:item.bbox_text.right, bottom:item.bbox_text.bottom };
-  if (item && item.bbox_bubble)
-    return { left:item.bbox_bubble.left, top:item.bbox_bubble.top, right:item.bbox_bubble.right, bottom:item.bbox_bubble.bottom };
+  if (item && item.bbox_text){
+    var bt = normalizeBox(item.bbox_text);
+    if (bt) return bt;
+  }
+  if (item && item.bbox_bubble){
+    var bb = normalizeBox(item.bbox_bubble);
+    if (bb) return bb;
+  }
   return null;
 }
 
