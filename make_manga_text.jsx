@@ -947,7 +947,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     log("  bubbleSize=(" + bw + "x" + bh + ") pad=" + pad + " inner=(" + innerW + "x" + innerH + ")");
 
     var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
-    var fontName  = getFontForType(item.bubble_type || "Standard Speech");
+    var fontName  = getFontForType(item.text_type || "Standard");
 
     // build text seed
     var baseSeedText;
