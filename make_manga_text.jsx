@@ -408,7 +408,7 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
   }
 }
 
-// ===== Centers/boxes =====
+// ===== Centers/boxes =====اه
 function polygonCentroid(points){
   var n = points.length;
   if (n < 3) return null;
@@ -459,57 +459,17 @@ function deriveBox(item){
 }
 
 // ===== Fonts & RTL helpers =====
-var DEFAULT_FONT_NAME = "ArialMT";
-
-function normalizeFontKey(name) {
-  return toStr(name).replace(/\s+/g, "").toLowerCase();
-}
-
-function resolveFontName(requestedName) {
-  var req = normalizeFontKey(requestedName || DEFAULT_FONT_NAME);
-  var fonts = [];
-  try { fonts = app.fonts || []; } catch (e) { fonts = []; }
-
-  var fallback = DEFAULT_FONT_NAME;
-  var partialMatch = null;
-
-  for (var i = 0; i < fonts.length; i++) {
-    var f = fonts[i];
-    var ps = normalizeFontKey(f.postScriptName || "");
-    var fam = normalizeFontKey(f.family || "");
-    var name = normalizeFontKey(f.name || "");
-
-    if (ps === req || fam === req || name === req) {
-      return f.postScriptName || f.name || fallback;
-    }
-
-    if (!partialMatch && (ps.indexOf(req) >= 0 || fam.indexOf(req) >= 0 || name.indexOf(req) >= 0)) {
-      partialMatch = f.postScriptName || f.name || partialMatch;
-    }
-  }
-
-  if (partialMatch) {
-    log('  ⚠️ font "' + requestedName + '" not found; using partial match "' + partialMatch + '"');
-    return partialMatch;
-  }
-
-  log('  ⚠️ font "' + requestedName + '" not found; falling back to ' + fallback);
-  return fallback;
-}
-
 function getFontForType(type){
-  var requested;
   switch(type){
-    case "Standard": requested = "B Koodak"; break;
-    case "Thought":         requested = "B Morvarid"; break;
-    case "Shouting/Emotion":requested = "AFSANEH"; break;
-    case "Whisper/Soft":    requested = "A nic"; break;
-    case "Electronic":      requested = "Consolas"; break;
-    case "Narration":       requested = "Far.Farnaz"; break;
-    case "Distorted/Custom":requested = "Shabnam-BoldItalic"; break;
-    default:                 requested = DEFAULT_FONT_NAME; break;
+    case "Standard": return "B Koodak Bold";
+    case "Thought":         return "B Morvarid Regular";
+    case "Shouting/Emotion":return "AFSANEH Regular";
+    case "Whisper/Soft":    return "A nic Regular";
+    case "Electronic":      return "Consolas";
+    case "Narration":   return "Far.Farnaz";
+    case "Distorted/Custom":return "Shabnam-BoldItalic";
+    default:                return "ArialMT";
   }
-  return resolveFontName(requested);
 }
 
 function forceRTL(s){
