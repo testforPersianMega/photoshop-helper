@@ -459,17 +459,76 @@ function deriveBox(item){
 }
 
 // ===== Fonts & RTL helpers =====
-function getFontForType(type){
-  switch(type){
-    case "Standard": return "B Koodak Bold";
-    case "Thought":         return "B Morvarid Regular";
-    case "Shouting/Emotion":return "AFSANEH Regular";
-    case "Whisper/Soft":    return "A nic Regular";
-    case "Electronic":      return "Consolas";
-    case "Narration":   return "Far.Farnaz";
-    case "Distorted/Custom":return "Shabnam-BoldItalic";
-    default:                return "ArialMT";
+var FONT_ALIASES = {
+  "B Koodak Bold": ["B Koodak", "BKoodak", "BKoodakBold", "B-Koodak-Bold"],
+  "B Morvarid Regular": ["B Morvarid", "B-Morvarid-Regular", "B Morvarid Fa"],
+  "AFSANEH Regular": ["AFSANEH", "AFSANEH-Regular"],
+  "A nic Regular": ["A nic", "A-nic", "A-nic-Regular"],
+  "Far.Farnaz": ["Farnaz", "Far-Farnaz", "Farnaz-Regular"],
+  "Shabnam-BoldItalic": ["Shabnam Bold Italic", "Shabnam BoldItalic", "ShabnamBI"]
+};
+
+function normalizeFontId(name) {
+  return collapseWhitespace(toStr(name)).toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function findInstalledFont(preferredNames) {
+  try {
+    var fonts = app.fonts;
+    if (!fonts || !fonts.length) return null;
+    for (var i = 0; i < preferredNames.length; i++) {
+      var target = normalizeFontId(preferredNames[i]);
+      for (var j = 0; j < fonts.length; j++) {
+        var f = fonts[j];
+        if (!f) continue;
+        if (normalizeFontId(f.postScriptName) === target || normalizeFontId(f.name) === target) {
+          return f;
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function resolveFontOrFallback(fontName) {
+  var candidates = [];
+  if (fontName) candidates.push(fontName);
+  if (FONT_ALIASES[fontName]) {
+    for (var i = 0; i < FONT_ALIASES[fontName].length; i++) {
+      candidates.push(FONT_ALIASES[fontName][i]);
+    }
   }
+  candidates.push("ArialMT", "Arial", "Arial-BoldMT");
+
+  var found = findInstalledFont(candidates);
+  if (found) {
+    if (normalizeFontId(found.postScriptName) !== normalizeFontId(fontName)) {
+      log('  ⚠️ requested font "' + fontName + '" resolved to "' + found.postScriptName + '"');
+    }
+    return found.postScriptName;
+  }
+
+  log('  ⚠️ requested font "' + fontName + '" not found; falling back to Photoshop default');
+  try {
+    return app.fonts[0].postScriptName;
+  } catch (e) {
+    return fontName || "ArialMT";
+  }
+}
+
+function getFontForType(type){
+  var requested;
+  switch(type){
+    case "Standard": requested = "B Koodak Bold"; break;
+    case "Thought":         requested = "B Morvarid Regular"; break;
+    case "Shouting/Emotion":requested = "AFSANEH Regular"; break;
+    case "Whisper/Soft":    requested = "A nic Regular"; break;
+    case "Electronic":      requested = "Consolas"; break;
+    case "Narration":   requested = "Far.Farnaz"; break;
+    case "Distorted/Custom":requested = "Shabnam-BoldItalic"; break;
+    default:                requested = "ArialMT"; break;
+  }
+  return resolveFontOrFallback(requested);
 }
 
 function forceRTL(s){
