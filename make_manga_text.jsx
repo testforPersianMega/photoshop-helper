@@ -550,6 +550,9 @@ function applyParagraphDirectionRTL() {
     var ti  = app.activeDocument.activeLayer.textItem;
     var txt = ti.contents;
     var len = txt.length;
+    var fontName = ti.font;
+    var sizePx   = ti.size;
+    var leading  = ti.leading;
 
     var desc = new ActionDescriptor();
     var ref  = new ActionReference();
@@ -579,6 +582,24 @@ function applyParagraphDirectionRTL() {
     psRange.putObject(s2t('paragraphStyle'), s2t('paragraphStyle'), pStyle);
     psList.putObject(s2t('paragraphStyleRange'), psRange);
     textDesc.putList(s2t('paragraphStyleRange'), psList);
+
+    // Preserve the currently chosen font when switching paragraph direction
+    // to avoid Photoshop resetting the face to a default.
+    if (fontName) {
+      var tsList  = new ActionList();
+      var tsRange = new ActionDescriptor();
+      tsRange.putInteger(s2t('from'), 0);
+      tsRange.putInteger(s2t('to'), len);
+
+      var tStyle = new ActionDescriptor();
+      tStyle.putString(s2t('fontPostScriptName'), fontName);
+      if (sizePx) tStyle.putUnitDouble(s2t('size'), s2t('pointsUnit'), sizePx);
+      if (leading) tStyle.putUnitDouble(s2t('leading'), s2t('pointsUnit'), leading);
+
+      tsRange.putObject(s2t('textStyle'), s2t('textStyle'), tStyle);
+      tsList.putObject(s2t('textStyleRange'), tsRange);
+      textDesc.putList(s2t('textStyleRange'), tsList);
+    }
 
     desc.putObject(c2t('T   '), s2t('textLayer'), textDesc);
     executeAction(c2t('setd'), desc, DialogModes.NO);
