@@ -10,9 +10,9 @@ app.displayDialogs = DialogModes.NO;
 app.preferences.rulerUnits = Units.PIXELS;
 
 // ===== USER CONFIG =====
-var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker");  // change if needed
-var imageFile   = File(scriptFolder + "/94107d26-f530-4994-8a94-e48a6e70777c.png");
-var jsonFile    = File(scriptFolder + "/positions.json");
+var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if needed
+var imageFile   = File(scriptFolder + "/wild/raw 48/0048-001.png");
+var jsonFile    = File(scriptFolder + "/wild/json final/0048-001.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 
 // Optional batch mode: process an entire chapter
@@ -20,8 +20,8 @@ var outputPSD   = File(scriptFolder + "/manga_output.psd");
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
 var PROCESS_WHOLE_CHAPTER = false;
-var chapterImagesFolder  = Folder(scriptFolder + "/chapter_images");
-var chapterJsonFolder    = Folder(scriptFolder + "/chapter_json");
+var chapterImagesFolder  = Folder(scriptFolder + "/wild/raw 48");
+var chapterJsonFolder    = Folder(scriptFolder + "/wild/json final");
 var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
 
 // ===== DEBUG + FILE LOGGING =====
@@ -426,12 +426,12 @@ function deriveBox(item){
 // ===== Fonts & RTL helpers =====
 function getFontForType(type){
   switch(type){
-    case "Standard Speech": return "Potk-Black";
-    case "Thought":         return "B Titr";
-    case "Shouting/Emotion":return "Impact";
-    case "Whisper/Soft":    return "B Nazanin Light";
+    case "Standard": return "B Koodak";
+    case "Thought":         return "B Morvarid";
+    case "Shouting/Emotion":return "AFSANEH";
+    case "Whisper/Soft":    return "A nic";
     case "Electronic":      return "Consolas";
-    case "Narration Box":   return "B Mitra";
+    case "Narration":   return "Far.Farnaz";
     case "Distorted/Custom":return "Shabnam-BoldItalic";
     default:                return "ArialMT";
   }
