@@ -460,6 +460,17 @@ function deriveBox(item){
 
 // ===== Fonts & RTL helpers =====
 var FONT_ALIASES = {
+  "IRANSans Black": [
+    "IRANSans-Black",
+    "IRANSansBlack",
+    "IRANSans",
+    "IRANSansWeb-Black",
+    "IRANSansWeb(FaNum)",
+    "IRANSans(FaNum)",
+    "IRANSans(Farsi)",
+    "IranSans-Black",
+    "IranSans Black"
+  ],
   "IRKoodak": [
     "IRKoodak-Regular",
     "IR Koodak",
@@ -1199,6 +1210,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     trySetMEEveryLineComposer();
 
     ti = lyr.textItem;
+    applyFontToTextItem(ti, fontName); // restore font if direction/composer reset it
     ti.justification = Justification.CENTER;
 
     ti.position = [cx - ti.width/2, cy - ti.height/2];
