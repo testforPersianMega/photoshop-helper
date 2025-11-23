@@ -102,19 +102,6 @@ function keepZWNJ(str, transformFn) {
   return restoreZWNJ(result, placeholder);
 }
 
-function normalizeZWNJFromText(val) {
-  var str = toStr(val);
-  if (!str) return "";
-
-  // Some exporters emit literal \u200c or &zwnj; sequences instead of the actual
-  // Zero Width Non-Joiner character. Normalize them before any whitespace
-  // cleanup so نیم‌فاصله stays intact through layout and rendering.
-  var normalized = str;
-  normalized = normalized.replace(/\u200c/gi, ZWNJ);
-  normalized = normalized.replace(/&zwnj;/gi, ZWNJ);
-  return normalized;
-}
-
 function collapseWhitespace(s){
   return keepZWNJ(s, function (txt) {
     return txt.replace(/[ \t\u00A0\r\n]+/g, " ");
@@ -702,52 +689,78 @@ function getFontForType(type){
   return resolveFontOrFallback(requested);
 }
 
-function setMiddleEasternComposer() {
-  try {
-    var idset = charIDToTypeID("setd");
-    var desc = new ActionDescriptor();
-    var ref = new ActionReference();
-    ref.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
-    desc.putReference(charIDToTypeID("null"), ref);
-
-    var composerDesc = new ActionDescriptor();
-    composerDesc.putEnumerated(
-      stringIDToTypeID("paragraphComposer"),
-      stringIDToTypeID("paragraphComposer"),
-      stringIDToTypeID("middleEastern")
-    );
-
-    desc.putObject(charIDToTypeID("T   "), charIDToTypeID("TxLr"), composerDesc);
-
-    executeAction(idset, desc, DialogModes.NO);
-  } catch (e) {}
+function forceRTL(s){
+  var RLE="\u202B", PDF="\u202C", RLM="\u200F";
+  var str = toStr(s);
+  if (!str) return RLM;
+  return keepZWNJ(str, function(raw){
+    var norm = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    var parts = norm.split("\n");
+    for (var i=0; i<parts.length; i++){
+      parts[i] = RLM + RLE + parts[i] + PDF;
+    }
+    return parts.join("\r");
+  });
 }
 
-function applyParagraphDirectionRTL() {
+function applyParagraphDirectionRTL(textForDirection) {
   try {
     if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return;
-    setMiddleEasternComposer();
+    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
+    var ti  = app.activeDocument.activeLayer.textItem;
+    var txt = forceRTL(textForDirection !== undefined ? textForDirection : ti.contents);
+    var len = txt.length;
 
-    var idset = charIDToTypeID("setd");
     var desc = new ActionDescriptor();
-    var ref = new ActionReference();
+    var ref  = new ActionReference();
+    ref.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
+    desc.putReference(c2t('null'), ref);
 
-    ref.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
-    desc.putReference(charIDToTypeID("null"), ref);
+    var textDesc = new ActionDescriptor();
 
-    var dirDesc = new ActionDescriptor();
-    dirDesc.putEnumerated(
-      stringIDToTypeID("paragraphDirection"),
-      stringIDToTypeID("paragraphDirection"),
-      stringIDToTypeID("rightToLeft")
+    var psList  = new ActionList();
+    var psRange = new ActionDescriptor();
+    psRange.putInteger(s2t('from'), 0);
+    psRange.putInteger(s2t('to'),   len);
+
+    var pStyle = new ActionDescriptor();
+    pStyle.putEnumerated(
+      s2t('paragraphDirection'),
+      s2t('paragraphDirection'),
+      s2t('RightToLeftParagraph')
+    );
+    pStyle.putEnumerated(
+      s2t('justification'),
+      s2t('justification'),
+      s2t('center')
     );
 
-    desc.putObject(charIDToTypeID("T   "), charIDToTypeID("TxLr"), dirDesc);
+    psRange.putObject(s2t('paragraphStyle'), s2t('paragraphStyle'), pStyle);
+    psList.putObject(s2t('paragraphStyleRange'), psRange);
+    textDesc.putList(s2t('paragraphStyleRange'), psList);
 
-    executeAction(idset, desc, DialogModes.NO);
+    desc.putObject(c2t('T   '), s2t('textLayer'), textDesc);
+    executeAction(c2t('setd'), desc, DialogModes.NO);
 
-    app.activeDocument.activeLayer.textItem.justification = Justification.CENTER;
+    ti.justification = Justification.CENTER;
   } catch(e) {}
+}
+
+function trySetMEEveryLineComposer() {
+  try {
+    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
+    var d = new ActionDescriptor(), r = new ActionReference();
+    r.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
+    d.putReference(c2t('null'), r);
+    var t = new ActionDescriptor();
+    t.putEnumerated(
+      s2t('textComposer'),
+      s2t('textComposer'),
+      s2t('adbeMEEveryLineComposer')
+    );
+    d.putObject(c2t('T   '), s2t('textLayer'), t);
+    executeAction(c2t('setd'), d, DialogModes.NO);
+  } catch (e) {}
 }
 
 function deriveRotationDeg(item){
@@ -960,11 +973,7 @@ function estimateSafeFontSizeForWrapped(wrapped, innerW, innerH, baseSize){
 // Create paragraph exactly the inner bubble size
 function setTextContentsRTL(ti, text) {
   if (!ti) return;
-  var str = toStr(text);
-  if (!str) str = "";
-  ti.contents = keepZWNJ(str, function (guarded) {
-    return toStr(guarded).replace(/\n/g, "\r");
-  });
+  ti.contents = forceRTL(text);
 }
 
 function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH){
@@ -1006,7 +1015,7 @@ function buildMeasureLayerFromLine(lyr, lineText) {
     measureLayer.visible = false;
     var measureTi = measureLayer.textItem;
     measureTi.kind = TextType.POINTTEXT;
-    setTextContentsRTL(measureTi, lineText);
+    measureTi.contents = forceRTL(lineText);
     measureTi.justification = Justification.CENTER;
     measureTi.position = [0, 0];
     return measureLayer;
@@ -1135,16 +1144,10 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     alert("❌ JSON not found:\n" + jsonFile.fsName);
     throw new Error("JSON file not found");
   }
-  // Force UTF-8 to preserve Zero Width Non-Joiner characters (\u200C) in Persian text
-  // even when the OS default encoding is not Unicode.
-  try { jsonFile.encoding = "UTF-8"; } catch (encErr) { log("  ⚠️ Could not set JSON encoding: " + encErr); }
   jsonFile.open("r");
   var jsonText = jsonFile.read();
   jsonFile.close();
   log("Loaded JSON: " + jsonFile.fsName);
-  // Normalize any literal ZWNJ escape sequences before parsing so half-space
-  // characters survive the JSON decode step.
-  jsonText = normalizeZWNJInJsonText(jsonText);
   var data = JSON.parse(jsonText);
 
   // Accept { image_size, items } OR legacy array
@@ -1168,7 +1171,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     var item = items[i];
     if (!item) continue;
 
-    var raw = normalizeZWNJFromText(item.text);
+    var raw = toStr(item.text);
     raw = normalizeWSKeepBreaks(raw);
     raw = safeTrim(raw);
     if (!raw) continue;
@@ -1246,10 +1249,12 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     var ti  = lyr.textItem;
 
     app.activeDocument.activeLayer = lyr;
+    applyParagraphDirectionRTL(wrapped);
+    trySetMEEveryLineComposer();
     applyParagraphDirectionRTL();
 
     ti = lyr.textItem;
-    setTextContentsRTL(ti, wrapped);
+    setTextContentsRTL(ti, wrapped); // reapply after direction/composer to avoid ZWNJ loss
     applyFontToTextItem(ti, fontName); // restore font if direction/composer reset it
     ti.justification = Justification.CENTER;
 
