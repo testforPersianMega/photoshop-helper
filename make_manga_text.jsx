@@ -73,8 +73,9 @@ function toStr(v){
     return String(v);
   } catch(e){ return ""; }
 }
-function safeTrim(s){ return s.replace(/^[\s\u00A0]+/, "").replace(/[\s\u00A0]+$/, ""); }
-function collapseWhitespace(s){ return s.replace(/\s+/g, " "); }
+function safeTrim(s){ return s.replace(/^[ \t\u00A0\r\n]+/, "").replace(/[ \t\u00A0\r\n]+$/, ""); }
+// Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
+function collapseWhitespace(s){ return s.replace(/[ \t\u00A0\r\n]+/g, " "); }
 
 // Keep line breaks, normalize spaces, and convert literal "\n" to real newlines
 function normalizeWSKeepBreaks(s){
@@ -772,7 +773,7 @@ TextMeasureContext.prototype.lineHeight = function(){
 function splitWordsForLayout(text) {
   var s = safeTrim(toStr(text));
   if (!s) return [];
-  var raw = s.split(/\s+/);
+  var raw = s.split(/[ \t\u00A0\r\n]+/);
   var words = [];
   for (var i = 0; i < raw.length; i++) {
     if (raw[i]) words.push(raw[i]);
