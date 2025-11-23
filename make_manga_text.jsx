@@ -703,12 +703,12 @@ function forceRTL(s){
   });
 }
 
-function applyParagraphDirectionRTL() {
+function applyParagraphDirectionRTL(textForDirection) {
   try {
     if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return;
     var s2t = stringIDToTypeID, c2t = charIDToTypeID;
     var ti  = app.activeDocument.activeLayer.textItem;
-    var txt = ti.contents;
+    var txt = forceRTL(textForDirection !== undefined ? textForDirection : ti.contents);
     var len = txt.length;
 
     var desc = new ActionDescriptor();
@@ -1250,7 +1250,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     var ti  = lyr.textItem;
 
     app.activeDocument.activeLayer = lyr;
-    applyParagraphDirectionRTL();
+    applyParagraphDirectionRTL(wrapped);
     trySetMEEveryLineComposer();
 
     ti = lyr.textItem;
