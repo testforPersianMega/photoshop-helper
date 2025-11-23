@@ -14,7 +14,8 @@ var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if
 var imageFile   = File(scriptFolder + "/wild/raw 48/0048-001.png");
 var jsonFile    = File(scriptFolder + "/wild/json final/0048-001.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
-var EXPORT_PSD  = true; // set to false to skip exporting the PSD at the end
+var outputJPG   = File(scriptFolder + "/manga_output.jpg");
+var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of the PSD
 
 // Optional batch mode: process an entire chapter
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
@@ -1172,7 +1173,7 @@ function ensureFolderExists(folder) {
   return folder;
 }
 
-function processImageWithJson(imageFile, jsonFile, outputPSD) {
+function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
   // ===== OPEN IMAGE =====
   if (!imageFile.exists) {
     alert("❌ Image not found:\n" + imageFile.fsName);
@@ -1317,26 +1318,40 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   }
 
   // ===== SAVE =====
-  if (EXPORT_PSD) {
-    var psdSaveOptions = new PhotoshopSaveOptions();
-    psdSaveOptions.embedColorProfile = true;
-    psdSaveOptions.layers = true;
-    psdSaveOptions.maximizeCompatibility = true;
-    psdSaveOptions.alphaChannels = true;
-    psdSaveOptions.annotations = true;
-    psdSaveOptions.spotColors = true;
+  var psdSaveOptions = new PhotoshopSaveOptions();
+  psdSaveOptions.embedColorProfile = true;
+  psdSaveOptions.layers = true;
+  psdSaveOptions.maximizeCompatibility = true;
+  psdSaveOptions.alphaChannels = true;
+  psdSaveOptions.annotations = true;
+  psdSaveOptions.spotColors = true;
 
-    doc.saveAs(outputPSD, psdSaveOptions, true);
-    log("✅ Done! Saved: " + outputPSD.fsName);
+  doc.saveAs(outputPSD, psdSaveOptions, true);
+  log("✅ Done! Saved PSD: " + outputPSD.fsName);
 
-    if (!PROCESS_WHOLE_CHAPTER) {
-      alert("✅ Done! Saved: " + outputPSD.fsName);
+  var finalAlert = "✅ Done! Saved PSD: " + outputPSD.fsName;
+
+  if (EXPORT_PSD_TO_JPG) {
+    var jpgTarget = outputJPG;
+    if (!jpgTarget) {
+      jpgTarget = File(outputPSD.fsName.replace(/\.psd$/i, ".jpg"));
     }
+
+    var jpgOptions = new JPEGSaveOptions();
+    jpgOptions.embedColorProfile = true;
+    jpgOptions.quality = 12; // highest quality
+    jpgOptions.formatOptions = FormatOptions.STANDARDBASELINE;
+    jpgOptions.matte = MatteType.NONE;
+
+    doc.saveAs(jpgTarget, jpgOptions, true);
+    log("✅ Also exported JPG: " + jpgTarget.fsName);
+    finalAlert += "\nJPG: " + jpgTarget.fsName;
   } else {
-    log("✅ Done! (PSD export disabled by EXPORT_PSD)");
-    if (!PROCESS_WHOLE_CHAPTER) {
-      alert("✅ Done! (PSD export disabled)");
-    }
+    log("✅ JPG export disabled by EXPORT_PSD_TO_JPG");
+  }
+
+  if (!PROCESS_WHOLE_CHAPTER) {
+    alert(finalAlert);
   }
 
   doc.close(SaveOptions.DONOTSAVECHANGES);
@@ -1380,7 +1395,8 @@ function runChapterBatch() {
     }
 
     var outPath = File(chapterOutputFolder + "/" + base + "_output.psd");
-    processImageWithJson(img, jsonPath, outPath);
+    var outJpg  = File(chapterOutputFolder + "/" + base + "_output.jpg");
+    processImageWithJson(img, jsonPath, outPath, outJpg);
   }
 
   alert("✅ Chapter batch complete! Saved to: " + chapterOutputFolder.fsName);
@@ -1390,5 +1406,5 @@ function runChapterBatch() {
 if (PROCESS_WHOLE_CHAPTER) {
   runChapterBatch();
 } else {
-  processImageWithJson(imageFile, jsonFile, outputPSD);
+  processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG);
 }
