@@ -717,7 +717,6 @@ function applyParagraphDirectionRTL(textForDirection) {
     desc.putReference(c2t('null'), ref);
 
     var textDesc = new ActionDescriptor();
-    textDesc.putString(s2t('textKey'), txt);
 
     var psList  = new ActionList();
     var psRange = new ActionDescriptor();
@@ -1252,6 +1251,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     app.activeDocument.activeLayer = lyr;
     applyParagraphDirectionRTL(wrapped);
     trySetMEEveryLineComposer();
+    applyParagraphDirectionRTL();
 
     ti = lyr.textItem;
     setTextContentsRTL(ti, wrapped); // reapply after direction/composer to avoid ZWNJ loss
