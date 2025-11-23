@@ -845,47 +845,15 @@ TextMeasureContext.prototype.lineHeight = function(){
   return Math.max(1, Math.round(this.size * 1.18) + 4);
 };
 
-function containsZWNJToken(word) {
-  return word && word.indexOf(ZWNJ) !== -1;
-}
-
-function createWordToken(raw) {
-  var text = toStr(raw);
-  return { value: text, atomic: containsZWNJToken(text) };
-}
-
-function wordText(token) {
-  return token && token.value !== undefined ? token.value : toStr(token);
-}
-
-function joinWordsPreserveTokens(words) {
-  var parts = [];
-  for (var i = 0; i < words.length; i++) {
-    parts.push(wordText(words[i]));
-  }
-  return parts.join(" ");
-}
-
 function splitWordsForLayout(text) {
   var s = safeTrim(toStr(text));
   if (!s) return [];
-
   return keepZWNJ(s, function (guarded) {
+    var raw = guarded.split(/[ \t\u00A0\r\n]+/);
     var words = [];
-    var buffer = "";
-
-    for (var i = 0; i < guarded.length; i++) {
-      var ch = guarded.charAt(i);
-      var isSpace = ch === " " || ch === "\t" || ch === "\u00A0" || ch === "\r" || ch === "\n";
-      if (isSpace) {
-        if (buffer) words.push(createWordToken(buffer));
-        buffer = "";
-        continue;
-      }
-      buffer += ch;
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i]) words.push(raw[i]);
     }
-
-    if (buffer) words.push(createWordToken(buffer));
     return words;
   });
 }
@@ -896,7 +864,7 @@ function greedyWrapWordsPixels(words, measureCtx, maxWidth) {
   if (!words || !words.length) return lines;
   for (var i = 0; i < words.length; i++) {
     var word = words[i];
-    var candidate = joinWordsPreserveTokens(current.concat([word]));
+    var candidate = current.concat([word]).join(" ");
     if (!current.length) {
       current = [word];
       continue;
@@ -905,7 +873,6 @@ function greedyWrapWordsPixels(words, measureCtx, maxWidth) {
       current.push(word);
     } else {
       lines.push(current);
-      // Never split atomic ZWNJ words; place them as a whole on the next line
       current = [word];
     }
   }
@@ -918,8 +885,8 @@ function rebalanceFirstLineStrict(linesWords, measureCtx, maxWidth, maxMoves) {
   var moves = 0;
   var limit = maxMoves || 5;
   while (moves < limit && linesWords[0].length > 1) {
-    var line1 = joinWordsPreserveTokens(linesWords[0]);
-    var line2 = joinWordsPreserveTokens(linesWords[1]);
+    var line1 = linesWords[0].join(" ");
+    var line2 = linesWords[1].join(" ");
     var w1 = measureCtx.measureWidth(line1);
     var w2 = measureCtx.measureWidth(line2);
     if (w1 < w2) break;
@@ -927,8 +894,8 @@ function rebalanceFirstLineStrict(linesWords, measureCtx, maxWidth, maxMoves) {
     var lastWord = linesWords[0][linesWords[0].length - 1];
     var newLine1 = linesWords[0].slice(0, -1);
     var newLine2 = [lastWord].concat(linesWords[1]);
-    var newLine1Text = newLine1.length ? joinWordsPreserveTokens(newLine1) : wordText(lastWord);
-    var newLine2Text = joinWordsPreserveTokens(newLine2);
+    var newLine1Text = newLine1.length ? newLine1.join(" ") : lastWord;
+    var newLine2Text = newLine2.join(" ");
     var newW1 = measureCtx.measureWidth(newLine1Text);
     var newW2 = measureCtx.measureWidth(newLine2Text);
     if (newW2 > maxWidth) break;
@@ -946,7 +913,7 @@ function rebalanceMiddleLines(wordsLines, measureCtx, maxWidth, passes) {
     var changed = false;
     var widths = [];
     for (var i = 0; i < wordsLines.length; i++) {
-      widths[i] = measureCtx.measureWidth(joinWordsPreserveTokens(wordsLines[i]));
+      widths[i] = measureCtx.measureWidth(wordsLines[i].join(" "));
     }
     for (var j = 1; j < wordsLines.length - 1; j++) {
       if (!wordsLines[j + 1] || !wordsLines[j + 1].length) continue;
@@ -954,12 +921,12 @@ function rebalanceMiddleLines(wordsLines, measureCtx, maxWidth, passes) {
       var wNext = widths[j + 1];
       if (wCurrent >= wNext) continue;
       var nextWord = wordsLines[j + 1][0];
-      var candidate = joinWordsPreserveTokens(wordsLines[j].concat([nextWord]));
+      var candidate = wordsLines[j].concat([nextWord]).join(" ");
       var candidateWidth = measureCtx.measureWidth(candidate);
       if (candidateWidth <= maxWidth) {
         wordsLines[j].push(wordsLines[j + 1].shift());
         widths[j] = candidateWidth;
-        widths[j + 1] = measureCtx.measureWidth(joinWordsPreserveTokens(wordsLines[j + 1]));
+        widths[j + 1] = measureCtx.measureWidth(wordsLines[j + 1].join(" "));
         changed = true;
       }
     }
@@ -995,7 +962,7 @@ function layoutBubble(text, doc, fontName, sizePx, maxWidth, maxHeight) {
   if (!linesWords.length) return "";
   var parts = [];
   for (var i = 0; i < linesWords.length; i++) {
-    parts.push(joinWordsPreserveTokens(linesWords[i]));
+    parts.push(linesWords[i].join(" "));
   }
   return parts.join("\r");
 }
