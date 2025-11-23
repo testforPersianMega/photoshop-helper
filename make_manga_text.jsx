@@ -73,7 +73,13 @@ function toStr(v){
     return String(v);
   } catch(e){ return ""; }
 }
-function safeTrim(s){ return s.replace(/^[ \t\u00A0\r\n]+/, "").replace(/[ \t\u00A0\r\n]+$/, ""); }
+function safeTrim(s){
+  return keepZWNJ(s, function (txt) {
+    return toStr(txt)
+      .replace(/^[ \t\u00A0\r\n]+/, "")
+      .replace(/[ \t\u00A0\r\n]+$/, "");
+  });
+}
 // Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
 // Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
 var ZWNJ = "\u200C";
@@ -966,13 +972,18 @@ function estimateSafeFontSizeForWrapped(wrapped, innerW, innerH, baseSize){
 }
 
 // Create paragraph exactly the inner bubble size
+function setTextContentsRTL(ti, text) {
+  if (!ti) return;
+  ti.contents = forceRTL(text);
+}
+
 function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH){
   var left = cx - innerW/2, top = cy - innerH/2;
   var lyr = doc.artLayers.add();
   lyr.kind = LayerKind.TEXT;
   var ti = lyr.textItem;
   ti.kind = TextType.PARAGRAPHTEXT;
-  ti.contents = forceRTL(text);
+  setTextContentsRTL(ti, text);
   applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
   try { ti.leading = Math.max(1, Math.floor(sizePx * 1.18)); } catch(e){}
@@ -1243,6 +1254,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     trySetMEEveryLineComposer();
 
     ti = lyr.textItem;
+    setTextContentsRTL(ti, wrapped); // reapply after direction/composer to avoid ZWNJ loss
     applyFontToTextItem(ti, fontName); // restore font if direction/composer reset it
     ti.justification = Justification.CENTER;
 
