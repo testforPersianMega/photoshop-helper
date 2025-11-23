@@ -1122,6 +1122,9 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     alert("❌ JSON not found:\n" + jsonFile.fsName);
     throw new Error("JSON file not found");
   }
+  // Force UTF-8 to preserve Zero Width Non-Joiner characters (\u200C) in Persian text
+  // even when the OS default encoding is not Unicode.
+  try { jsonFile.encoding = "UTF-8"; } catch (encErr) { log("  ⚠️ Could not set JSON encoding: " + encErr); }
   jsonFile.open("r");
   var jsonText = jsonFile.read();
   jsonFile.close();
