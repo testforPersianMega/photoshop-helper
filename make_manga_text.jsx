@@ -1320,7 +1320,10 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   doc.saveAs(outputPSD, psdSaveOptions, true);
   doc.close(SaveOptions.DONOTSAVECHANGES);
   log("✅ Done! Saved: " + outputPSD.fsName);
+
+  if (!PROCESS_WHOLE_CHAPTER) {
   alert("✅ Done! Saved: " + outputPSD.fsName);
+  }
 }
 
 function listImageFiles(folder) {
