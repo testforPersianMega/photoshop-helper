@@ -111,20 +111,8 @@ function normalizeZWNJFromText(val) {
   // cleanup so نیم‌فاصله stays intact through layout and rendering.
   var normalized = str;
   normalized = normalized.replace(/\u200c/gi, ZWNJ);
-  normalized = normalized.replace(/\\u200c/gi, ZWNJ); // double-escaped
   normalized = normalized.replace(/&zwnj;/gi, ZWNJ);
-  normalized = normalized.replace(/&#8204;/gi, ZWNJ);
   return normalized;
-}
-
-function normalizeZWNJInJsonText(rawJson) {
-  if (!rawJson) return "";
-  // Convert any literal sequences to the actual character before JSON.parse
-  var txt = String(rawJson);
-  txt = txt.replace(/\\u200c/gi, ZWNJ); // already escaped sequences
-  txt = txt.replace(/&zwnj;/gi, ZWNJ);
-  txt = txt.replace(/&#8204;/gi, ZWNJ);
-  return txt;
 }
 
 function collapseWhitespace(s){
