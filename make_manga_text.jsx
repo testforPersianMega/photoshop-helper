@@ -796,7 +796,7 @@ TextMeasureContext.prototype.measureWidth = function(text){
   if (!text) return 0;
   try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
   this.layer.visible = true;
-  this.textItem.contents = text;
+  setTextContentsRTL(this.textItem, text);
   var bounds = layerBoundsPx(this.layer);
   return bounds.width;
 };
