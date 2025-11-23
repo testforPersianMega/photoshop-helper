@@ -483,13 +483,14 @@ var FONT_ALIASES = {
     "B Koodak Bold",
     "B Koodak(Farsi)"
   ],
-  "B Morvarid Regular": ["B Morvarid-Regular", "B Morvarid Fa"],
-  "AFSANEH": ["AFSANEH-Regular"],
+  "B Morvarid": ["B Morvarid-Regular", "B Morvarid Regular"],
+  "AFSANEH": ["AFSANEH-Regular", "AFSANEH Regular"],
   "Potk": ["Potk-Black"],
   "Kalameh": ["Kalameh-Regular"],
   "A nic Regular": ["A nic", "A-nic", "A-nic-Regular"],
   "IRFarnaz": [
     "IRFarnaz-Regular",
+    "IRFarnaz Regular",
     "IR Farnaz",
     "IRFarnaz(Farsi)",
     "IRFarnaz Farsi",
@@ -642,9 +643,9 @@ function applyFontToTextItem(textItem, requestedFont) {
 function getFontForType(type){
   var requested;
   switch(type){
-    case "Standard": requested = "IRANSans Black"; break;
-    case "Thought":         requested = "B Morvarid-Regular"; break;
-    case "Shouting/Emotion":requested = "Potk"; break;
+    case "Standard": requested = "IRKoodak"; break;
+    case "Thought":         requested = "B Morvarid"; break;
+    case "Shouting/Emotion":requested = "AFSANEH"; break;
     case "Whisper/Soft":    requested = "A nic Regular"; break;
     case "Electronic":      requested = "Consolas"; break;
     case "Narration":   requested = "IRFarnaz"; break;
