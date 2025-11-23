@@ -845,15 +845,30 @@ TextMeasureContext.prototype.lineHeight = function(){
   return Math.max(1, Math.round(this.size * 1.18) + 4);
 };
 
+function containsZWNJToken(word) {
+  return word && word.indexOf(ZWNJ) !== -1;
+}
+
 function splitWordsForLayout(text) {
   var s = safeTrim(toStr(text));
   if (!s) return [];
+
   return keepZWNJ(s, function (guarded) {
-    var raw = guarded.split(/[ \t\u00A0\r\n]+/);
     var words = [];
-    for (var i = 0; i < raw.length; i++) {
-      if (raw[i]) words.push(raw[i]);
+    var buffer = "";
+
+    for (var i = 0; i < guarded.length; i++) {
+      var ch = guarded.charAt(i);
+      var isSpace = ch === " " || ch === "\t" || ch === "\u00A0" || ch === "\r" || ch === "\n";
+      if (isSpace) {
+        if (buffer) words.push(buffer);
+        buffer = "";
+        continue;
+      }
+      buffer += ch;
     }
+
+    if (buffer) words.push(buffer);
     return words;
   });
 }
@@ -873,6 +888,7 @@ function greedyWrapWordsPixels(words, measureCtx, maxWidth) {
       current.push(word);
     } else {
       lines.push(current);
+      // Never split atomic ZWNJ words; place them as a whole on the next line
       current = [word];
     }
   }
