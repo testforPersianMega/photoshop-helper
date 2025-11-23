@@ -580,6 +580,22 @@ function applyFontToTextItem(textItem, requestedFont) {
   var candidates = collectFontCandidates(requestedFont);
   var fallback = requestedFont;
 
+  // Prefer assigning via a real font object (textFont) so Photoshop doesn't silently
+  // swap the font when the string id is ambiguous.
+  var matched = findInstalledFont(candidates);
+  if (matched) {
+    try {
+      textItem.textFont = matched;
+      textItem.font = matched.postScriptName;
+      if (requestedFont && normalizeFontId(matched.postScriptName) !== normalizeFontId(requestedFont)) {
+        log('  ⚠️ requested font "' + requestedFont + '" resolved to "' + matched.postScriptName + '"');
+      }
+      return matched.postScriptName;
+    } catch (assignErr) {
+      log('  ⚠️ failed to apply font object "' + matched.postScriptName + '": ' + assignErr);
+    }
+  }
+
   for (var i = 0; i < candidates.length; i++) {
     var candidate = candidates[i];
     try {
