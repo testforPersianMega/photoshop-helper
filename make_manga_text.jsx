@@ -102,6 +102,31 @@ function keepZWNJ(str, transformFn) {
   return restoreZWNJ(result, placeholder);
 }
 
+function normalizeZWNJFromText(val) {
+  var str = toStr(val);
+  if (!str) return "";
+
+  // Some exporters emit literal \u200c or &zwnj; sequences instead of the actual
+  // Zero Width Non-Joiner character. Normalize them before any whitespace
+  // cleanup so نیم‌فاصله stays intact through layout and rendering.
+  var normalized = str;
+  normalized = normalized.replace(/\u200c/gi, ZWNJ);
+  normalized = normalized.replace(/\\u200c/gi, ZWNJ); // double-escaped
+  normalized = normalized.replace(/&zwnj;/gi, ZWNJ);
+  normalized = normalized.replace(/&#8204;/gi, ZWNJ);
+  return normalized;
+}
+
+function normalizeZWNJInJsonText(rawJson) {
+  if (!rawJson) return "";
+  // Convert any literal sequences to the actual character before JSON.parse
+  var txt = String(rawJson);
+  txt = txt.replace(/\\u200c/gi, ZWNJ); // already escaped sequences
+  txt = txt.replace(/&zwnj;/gi, ZWNJ);
+  txt = txt.replace(/&#8204;/gi, ZWNJ);
+  return txt;
+}
+
 function collapseWhitespace(s){
   return keepZWNJ(s, function (txt) {
     return txt.replace(/[ \t\u00A0\r\n]+/g, " ");
@@ -1129,6 +1154,9 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   var jsonText = jsonFile.read();
   jsonFile.close();
   log("Loaded JSON: " + jsonFile.fsName);
+  // Normalize any literal ZWNJ escape sequences before parsing so half-space
+  // characters survive the JSON decode step.
+  jsonText = normalizeZWNJInJsonText(jsonText);
   var data = JSON.parse(jsonText);
 
   // Accept { image_size, items } OR legacy array
@@ -1152,7 +1180,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     var item = items[i];
     if (!item) continue;
 
-    var raw = toStr(item.text);
+    var raw = normalizeZWNJFromText(item.text);
     raw = normalizeWSKeepBreaks(raw);
     raw = safeTrim(raw);
     if (!raw) continue;
