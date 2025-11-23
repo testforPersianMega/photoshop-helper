@@ -1142,6 +1142,9 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   var jsonText = jsonFile.read();
   jsonFile.close();
   log("Loaded JSON: " + jsonFile.fsName);
+  // Normalize any literal ZWNJ escape sequences before parsing so half-space
+  // characters survive the JSON decode step.
+  jsonText = normalizeZWNJInJsonText(jsonText);
   var data = JSON.parse(jsonText);
 
   // Accept { image_size, items } OR legacy array
