@@ -460,13 +460,33 @@ function deriveBox(item){
 
 // ===== Fonts & RTL helpers =====
 var FONT_ALIASES = {
-  "IRKoodak": ["IRKoodak-Regular"],
+  "IRKoodak": [
+    "IRKoodak-Regular",
+    "IR Koodak",
+    "IR Koodak Bold",
+    "IRKoodak Bold",
+    "IRKoodakBold",
+    "IRKoodak(Bold)",
+    "B Koodak",
+    "BKoodak",
+    "B Koodak Bold",
+    "B Koodak(Farsi)"
+  ],
   "B Morvarid Regular": ["B Morvarid-Regular", "B Morvarid Fa"],
   "AFSANEH": ["AFSANEH-Regular"],
   "Potk": ["Potk-Black"],
   "Kalameh": ["Kalameh-Regular"],
   "A nic Regular": ["A nic", "A-nic", "A-nic-Regular"],
-  "IRFarnaz": ["IRFarnaz-Regular"],
+  "IRFarnaz": [
+    "IRFarnaz-Regular",
+    "IR Farnaz",
+    "IRFarnaz(Farsi)",
+    "IRFarnaz Farsi",
+    "B Farnaz",
+    "BFarnaz",
+    "Farnaz",
+    "Farnaz(Farsi)"
+  ],
   "Shabnam-BoldItalic": ["Shabnam Bold Italic", "Shabnam BoldItalic", "ShabnamBI"]
 };
 
