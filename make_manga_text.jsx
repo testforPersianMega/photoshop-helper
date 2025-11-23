@@ -11,8 +11,8 @@ app.preferences.rulerUnits = Units.PIXELS;
 
 // ===== USER CONFIG =====
 var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if needed
-var imageFile   = File(scriptFolder + "/wild/raw 48/0048-001.png");
-var jsonFile    = File(scriptFolder + "/wild/json final/0048-001.json");
+var imageFile   = File(scriptFolder + "/wild/raw 48/");
+var jsonFile    = File(scriptFolder + "/wild/json final");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 var outputJPG   = File(scriptFolder + "/manga_output.jpg");
 var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of the PSD
@@ -21,7 +21,7 @@ var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of th
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
-var PROCESS_WHOLE_CHAPTER = false;
+var PROCESS_WHOLE_CHAPTER = true;
 var chapterImagesFolder  = Folder(scriptFolder + "/wild/raw 48");
 var chapterJsonFolder    = Folder(scriptFolder + "/wild/json final");
 var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
