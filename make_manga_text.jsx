@@ -517,6 +517,35 @@ function resolveFontOrFallback(fontName) {
   }
 }
 
+function applyFontToTextItem(textItem, requestedFont) {
+  if (!textItem) return requestedFont;
+
+  var resolved = resolveFontOrFallback(requestedFont);
+  var applied = resolved;
+
+  try {
+    textItem.font = resolved;
+    applied = textItem.font;
+    if (normalizeFontId(applied) !== normalizeFontId(resolved)) {
+      log('  ⚠️ Photoshop applied font "' + applied + '" instead of requested "' + resolved + '"');
+    }
+    return applied;
+  } catch (e) {
+    log('  ⚠️ failed to apply font "' + resolved + '": ' + e);
+  }
+
+  try {
+    applied = app.fonts[0].postScriptName;
+    textItem.font = applied;
+    log('  ⚠️ falling back to default font "' + applied + '"');
+    return applied;
+  } catch (fallbackErr) {
+    log('  ⚠️ could not apply fallback font: ' + fallbackErr);
+  }
+
+  return resolved;
+}
+
 function getFontForType(type){
   var requested;
   switch(type){
@@ -621,7 +650,7 @@ function TextMeasureContext(doc, fontName, sizePx) {
   var ti = this.layer.textItem;
   ti.kind = TextType.POINTTEXT;
   ti.contents = ".";
-  ti.font = fontName;
+  applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
   ti.justification = Justification.CENTER;
   ti.position = [0, 0];
@@ -818,7 +847,7 @@ function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, inn
   var ti = lyr.textItem;
   ti.kind = TextType.PARAGRAPHTEXT;
   ti.contents = forceRTL(text);
-  ti.font = fontName;
+  applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
   try { ti.leading = Math.max(1, Math.floor(sizePx * 1.18)); } catch(e){}
   ti.justification = Justification.CENTER;
