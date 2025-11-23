@@ -473,6 +473,49 @@ function normalizeFontId(name) {
   return collapseWhitespace(toStr(name)).toLowerCase().replace(/[\s_-]+/g, "");
 }
 
+function collectFontCandidates(fontName) {
+  var seen = {};
+  var candidates = [];
+  function add(name) {
+    if (!name) return;
+    var id = normalizeFontId(name);
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    candidates.push(name);
+  }
+
+  add(fontName);
+  if (FONT_ALIASES[fontName]) {
+    for (var i = 0; i < FONT_ALIASES[fontName].length; i++) {
+      add(FONT_ALIASES[fontName][i]);
+    }
+  }
+
+  try {
+    var fonts = app.fonts;
+    if (fonts && fonts.length) {
+      for (var c = 0; c < candidates.length; c++) {
+        var target = normalizeFontId(candidates[c]);
+        for (var j = 0; j < fonts.length; j++) {
+          var f = fonts[j];
+          if (!f) continue;
+          var psId = normalizeFontId(f.postScriptName);
+          var nameId = normalizeFontId(f.name);
+          if (psId === target || nameId === target) {
+            add(f.postScriptName);
+            add(f.name);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  add("ArialMT");
+  add("Arial");
+  add("Arial-BoldMT");
+  return candidates;
+}
+
 function findInstalledFont(preferredNames) {
   try {
     var fonts = app.fonts;
@@ -492,14 +535,7 @@ function findInstalledFont(preferredNames) {
 }
 
 function resolveFontOrFallback(fontName) {
-  var candidates = [];
-  if (fontName) candidates.push(fontName);
-  if (FONT_ALIASES[fontName]) {
-    for (var i = 0; i < FONT_ALIASES[fontName].length; i++) {
-      candidates.push(FONT_ALIASES[fontName][i]);
-    }
-  }
-  candidates.push("ArialMT", "Arial", "Arial-BoldMT");
+  var candidates = collectFontCandidates(fontName);
 
   var found = findInstalledFont(candidates);
   if (found) {
@@ -520,30 +556,39 @@ function resolveFontOrFallback(fontName) {
 function applyFontToTextItem(textItem, requestedFont) {
   if (!textItem) return requestedFont;
 
-  var resolved = resolveFontOrFallback(requestedFont);
-  var applied = resolved;
+  var candidates = collectFontCandidates(requestedFont);
+  var fallback = requestedFont;
 
-  try {
-    textItem.font = resolved;
-    applied = textItem.font;
-    if (normalizeFontId(applied) !== normalizeFontId(resolved)) {
-      log('  ⚠️ Photoshop applied font "' + applied + '" instead of requested "' + resolved + '"');
+  for (var i = 0; i < candidates.length; i++) {
+    var candidate = candidates[i];
+    try {
+      textItem.font = candidate;
+      var applied = textItem.font;
+      if (normalizeFontId(applied) !== normalizeFontId(candidate)) {
+        log('  ⚠️ Photoshop applied font "' + applied + '" instead of requested "' + candidate + '"');
+        continue;
+      }
+      if (requestedFont && normalizeFontId(applied) !== normalizeFontId(requestedFont)) {
+        log('  ⚠️ requested font "' + requestedFont + '" resolved to "' + applied + '"');
+      }
+      return applied;
+    } catch (e) {
+      log('  ⚠️ failed to apply font "' + candidate + '": ' + e);
     }
-    return applied;
-  } catch (e) {
-    log('  ⚠️ failed to apply font "' + resolved + '": ' + e);
+
+    if (!fallback) fallback = candidate;
   }
 
   try {
-    applied = app.fonts[0].postScriptName;
-    textItem.font = applied;
-    log('  ⚠️ falling back to default font "' + applied + '"');
-    return applied;
+    var defaultFont = app.fonts && app.fonts.length ? app.fonts[0].postScriptName : (fallback || "ArialMT");
+    textItem.font = defaultFont;
+    log('  ⚠️ falling back to default font "' + defaultFont + '"');
+    return defaultFont;
   } catch (fallbackErr) {
     log('  ⚠️ could not apply fallback font: ' + fallbackErr);
   }
 
-  return resolved;
+  return fallback || requestedFont;
 }
 
 function getFontForType(type){
