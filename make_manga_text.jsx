@@ -14,6 +14,7 @@ var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if
 var imageFile   = File(scriptFolder + "/wild/raw 48/0048-001.png");
 var jsonFile    = File(scriptFolder + "/wild/json final/0048-001.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
+var EXPORT_PSD  = true; // set to false to skip exporting the PSD at the end
 
 // Optional batch mode: process an entire chapter
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
@@ -1316,14 +1317,29 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   }
 
   // ===== SAVE =====
-  var psdSaveOptions = new PhotoshopSaveOptions();
-  doc.saveAs(outputPSD, psdSaveOptions, true);
-  doc.close(SaveOptions.DONOTSAVECHANGES);
-  log("✅ Done! Saved: " + outputPSD.fsName);
+  if (EXPORT_PSD) {
+    var psdSaveOptions = new PhotoshopSaveOptions();
+    psdSaveOptions.embedColorProfile = true;
+    psdSaveOptions.layers = true;
+    psdSaveOptions.maximizeCompatibility = true;
+    psdSaveOptions.alphaChannels = true;
+    psdSaveOptions.annotations = true;
+    psdSaveOptions.spotColors = true;
 
-  if (!PROCESS_WHOLE_CHAPTER) {
-  alert("✅ Done! Saved: " + outputPSD.fsName);
+    doc.saveAs(outputPSD, psdSaveOptions, true);
+    log("✅ Done! Saved: " + outputPSD.fsName);
+
+    if (!PROCESS_WHOLE_CHAPTER) {
+      alert("✅ Done! Saved: " + outputPSD.fsName);
+    }
+  } else {
+    log("✅ Done! (PSD export disabled by EXPORT_PSD)");
+    if (!PROCESS_WHOLE_CHAPTER) {
+      alert("✅ Done! (PSD export disabled)");
+    }
   }
+
+  doc.close(SaveOptions.DONOTSAVECHANGES);
 }
 
 function listImageFiles(folder) {
