@@ -694,15 +694,17 @@ function setMiddleEasternComposer() {
     var idset = charIDToTypeID("setd");
     var desc = new ActionDescriptor();
     var ref = new ActionReference();
-    ref.putProperty(charIDToTypeID("Prpr"), stringIDToTypeID("paragraphComposer"));
-    ref.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ornt"), charIDToTypeID("Hrzn"));
+    ref.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
     desc.putReference(charIDToTypeID("null"), ref);
 
-    desc.putEnumerated(
+    var composerDesc = new ActionDescriptor();
+    composerDesc.putEnumerated(
       stringIDToTypeID("paragraphComposer"),
       stringIDToTypeID("paragraphComposer"),
       stringIDToTypeID("middleEastern")
     );
+
+    desc.putObject(charIDToTypeID("T   "), charIDToTypeID("TxLr"), composerDesc);
 
     executeAction(idset, desc, DialogModes.NO);
   } catch (e) {}
@@ -717,15 +719,17 @@ function applyParagraphDirectionRTL() {
     var desc = new ActionDescriptor();
     var ref = new ActionReference();
 
-    ref.putProperty(charIDToTypeID("Prpr"), stringIDToTypeID("paragraphDirection"));
-    ref.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ornt"), charIDToTypeID("Hrzn"));
+    ref.putEnumerated(charIDToTypeID("TxLr"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
     desc.putReference(charIDToTypeID("null"), ref);
 
-    desc.putEnumerated(
+    var dirDesc = new ActionDescriptor();
+    dirDesc.putEnumerated(
       stringIDToTypeID("paragraphDirection"),
       stringIDToTypeID("paragraphDirection"),
       stringIDToTypeID("rightToLeft")
     );
+
+    desc.putObject(charIDToTypeID("T   "), charIDToTypeID("TxLr"), dirDesc);
 
     executeAction(idset, desc, DialogModes.NO);
 
@@ -945,7 +949,9 @@ function setTextContentsRTL(ti, text) {
   if (!ti) return;
   var str = toStr(text);
   if (!str) str = "";
-  ti.contents = str.replace(/\n/g, "\r");
+  ti.contents = keepZWNJ(str, function (guarded) {
+    return toStr(guarded).replace(/\n/g, "\r");
+  });
 }
 
 function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH){
