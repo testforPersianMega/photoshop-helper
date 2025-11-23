@@ -83,6 +83,33 @@ function safeTrim(s){
 // Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
 // Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
 var ZWNJ = "\u200C";
+// Normalize ZWNJ handling for ExtendScript JSON quirks
+function normalizeZWNJInJsonText(rawJson) {
+  if (!rawJson) return "";
+  var txt = String(rawJson);
+
+  // Normalize any HTML-style ZWNJ encodings to actual U+200C
+  txt = txt.replace(/&zwnj;/gi, ZWNJ);
+  txt = txt.replace(/&#8204;/gi, ZWNJ);
+
+  // Convert every actual U+200C in the JSON text into a literal "\u200c"
+  txt = txt.replace(/\u200C/g, "\\u200c");
+
+  return txt;
+}
+
+function normalizeZWNJFromText(val) {
+  var str = (val === undefined || val === null) ? "" : String(val);
+  if (!str) return "";
+
+  var normalized = str;
+  normalized = normalized.replace(/\u200c/gi, ZWNJ);
+  normalized = normalized.replace(/\\u200c/gi, ZWNJ);
+  normalized = normalized.replace(/&zwnj;/gi, ZWNJ);
+  normalized = normalized.replace(/&#8204;/gi, ZWNJ);
+  return normalized;
+}
+
 function restoreZWNJ(val, placeholder) {
   if (val instanceof Array) {
     var restored = [];
@@ -121,6 +148,20 @@ function normalizeWSKeepBreaks(s){
     }
     return parts.join("\n");
   });
+}
+
+function normalizeItemZWNJ(item) {
+  if (!item) return item;
+  if (item.text !== undefined) item.text = normalizeZWNJFromText(item.text);
+  return item;
+}
+
+function normalizeItemsZWNJ(items) {
+  if (!items || !items.length) return items;
+  for (var i = 0; i < items.length; i++) {
+    normalizeItemZWNJ(items[i]);
+  }
+  return items;
 }
 
 // ===== Geometry helpers =====
@@ -1147,15 +1188,16 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   jsonFile.open("r");
   var jsonText = jsonFile.read();
   jsonFile.close();
+  jsonText = normalizeZWNJInJsonText(jsonText);
   log("Loaded JSON: " + jsonFile.fsName);
   var data = JSON.parse(jsonText);
 
   // Accept { image_size, items } OR legacy array
   var items=null, srcW=null, srcH=null;
   if (data && data.items && data.image_size){
-    items=data.items; srcW=data.image_size.width; srcH=data.image_size.height;
+    items=normalizeItemsZWNJ(data.items); srcW=data.image_size.width; srcH=data.image_size.height;
   } else if (data instanceof Array){
-    items=data; srcW=doc.width.as('px'); srcH=doc.height.as('px');
+    items=normalizeItemsZWNJ(data); srcW=doc.width.as('px'); srcH=doc.height.as('px');
   } else {
     throw new Error("JSON must contain { image_size, items } or be an array");
   }
