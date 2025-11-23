@@ -77,10 +77,6 @@ function safeTrim(s){ return s.replace(/^[ \t\u00A0\r\n]+/, "").replace(/[ \t\u0
 // Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
 // Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
 var ZWNJ = "\u200C";
-var ZWJ = "\u200D"; // treat as invisible joiner we must not strip either
-var INVISIBLE_JOINERS = [ZWNJ, ZWJ];
-var ZW_PLACEHOLDER = String.fromCharCode(0xE000); // private use placeholder not used in normal text
-
 function restoreZWNJ(val, placeholder) {
   if (val instanceof Array) {
     var restored = [];
@@ -89,22 +85,15 @@ function restoreZWNJ(val, placeholder) {
     }
     return restored;
   }
-  var out = toStr(val);
-  for (var i = 0; i < INVISIBLE_JOINERS.length; i++) {
-    out = out.split(placeholder + i).join(INVISIBLE_JOINERS[i]);
-  }
-  return out;
+  return toStr(val).split(placeholder).join(ZWNJ);
 }
 
 function keepZWNJ(str, transformFn) {
   if (!transformFn) return str;
-  var guarded = toStr(str);
-  for (var i = 0; i < INVISIBLE_JOINERS.length; i++) {
-    var ph = ZW_PLACEHOLDER + i; // unique placeholder per joiner
-    guarded = guarded.split(INVISIBLE_JOINERS[i]).join(ph);
-  }
+  var placeholder = "__ZWNJ__SAFE__";
+  var guarded = toStr(str).split(ZWNJ).join(placeholder);
   var result = transformFn(guarded);
-  return restoreZWNJ(result, ZW_PLACEHOLDER);
+  return restoreZWNJ(result, placeholder);
 }
 
 function collapseWhitespace(s){
