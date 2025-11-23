@@ -73,7 +73,13 @@ function toStr(v){
     return String(v);
   } catch(e){ return ""; }
 }
-function safeTrim(s){ return s.replace(/^[ \t\u00A0\r\n]+/, "").replace(/[ \t\u00A0\r\n]+$/, ""); }
+function safeTrim(s){
+  return keepZWNJ(s, function (txt) {
+    return toStr(txt)
+      .replace(/^[ \t\u00A0\r\n]+/, "")
+      .replace(/[ \t\u00A0\r\n]+$/, "");
+  });
+}
 // Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
 // Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
 var ZWNJ = "\u200C";
