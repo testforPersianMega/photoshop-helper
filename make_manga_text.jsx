@@ -73,7 +73,13 @@ function toStr(v){
     return String(v);
   } catch(e){ return ""; }
 }
-function safeTrim(s){ return s.replace(/^[ \t\u00A0\r\n]+/, "").replace(/[ \t\u00A0\r\n]+$/, ""); }
+function safeTrim(s){
+  return keepZWNJ(s, function (txt) {
+    return toStr(txt)
+      .replace(/^[ \t\u00A0\r\n]+/, "")
+      .replace(/[ \t\u00A0\r\n]+$/, "");
+  });
+}
 // Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
 // Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
 var ZWNJ = "\u200C";
@@ -697,12 +703,12 @@ function forceRTL(s){
   });
 }
 
-function applyParagraphDirectionRTL() {
+function applyParagraphDirectionRTL(textForDirection) {
   try {
     if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return;
     var s2t = stringIDToTypeID, c2t = charIDToTypeID;
     var ti  = app.activeDocument.activeLayer.textItem;
-    var txt = ti.contents;
+    var txt = forceRTL(textForDirection !== undefined ? textForDirection : ti.contents);
     var len = txt.length;
 
     var desc = new ActionDescriptor();
@@ -790,7 +796,7 @@ TextMeasureContext.prototype.measureWidth = function(text){
   if (!text) return 0;
   try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
   this.layer.visible = true;
-  this.textItem.contents = text;
+  setTextContentsRTL(this.textItem, text);
   var bounds = layerBoundsPx(this.layer);
   return bounds.width;
 };
@@ -966,13 +972,18 @@ function estimateSafeFontSizeForWrapped(wrapped, innerW, innerH, baseSize){
 }
 
 // Create paragraph exactly the inner bubble size
+function setTextContentsRTL(ti, text) {
+  if (!ti) return;
+  ti.contents = forceRTL(text);
+}
+
 function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH){
   var left = cx - innerW/2, top = cy - innerH/2;
   var lyr = doc.artLayers.add();
   lyr.kind = LayerKind.TEXT;
   var ti = lyr.textItem;
   ti.kind = TextType.PARAGRAPHTEXT;
-  ti.contents = forceRTL(text);
+  setTextContentsRTL(ti, text);
   applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
   try { ti.leading = Math.max(1, Math.floor(sizePx * 1.18)); } catch(e){}
@@ -1239,10 +1250,11 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     var ti  = lyr.textItem;
 
     app.activeDocument.activeLayer = lyr;
-    applyParagraphDirectionRTL();
+    applyParagraphDirectionRTL(wrapped);
     trySetMEEveryLineComposer();
 
     ti = lyr.textItem;
+    setTextContentsRTL(ti, wrapped); // reapply after direction/composer to avoid ZWNJ loss
     applyFontToTextItem(ti, fontName); // restore font if direction/composer reset it
     ti.justification = Justification.CENTER;
 
