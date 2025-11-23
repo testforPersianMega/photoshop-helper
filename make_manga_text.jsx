@@ -75,19 +75,46 @@ function toStr(v){
 }
 function safeTrim(s){ return s.replace(/^[ \t\u00A0\r\n]+/, "").replace(/[ \t\u00A0\r\n]+$/, ""); }
 // Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
-function collapseWhitespace(s){ return s.replace(/[ \t\u00A0\r\n]+/g, " "); }
+// Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
+var ZWNJ = "\u200C";
+function restoreZWNJ(val, placeholder) {
+  if (val instanceof Array) {
+    var restored = [];
+    for (var i = 0; i < val.length; i++) {
+      restored.push(restoreZWNJ(val[i], placeholder));
+    }
+    return restored;
+  }
+  return toStr(val).split(placeholder).join(ZWNJ);
+}
+
+function keepZWNJ(str, transformFn) {
+  if (!transformFn) return str;
+  var placeholder = "__ZWNJ__SAFE__";
+  var guarded = toStr(str).split(ZWNJ).join(placeholder);
+  var result = transformFn(guarded);
+  return restoreZWNJ(result, placeholder);
+}
+
+function collapseWhitespace(s){
+  return keepZWNJ(s, function (txt) {
+    return txt.replace(/[ \t\u00A0\r\n]+/g, " ");
+  });
+}
 
 // Keep line breaks, normalize spaces, and convert literal "\n" to real newlines
 function normalizeWSKeepBreaks(s){
   var str = toStr(s);
   if (!str) return "";
-  var norm = str.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  norm = norm.replace(/\\n/g, "\n");
-  var parts = norm.split("\n");
-  for (var i=0; i<parts.length; i++){
-    parts[i] = parts[i].replace(/[ \t\u00A0]+/g, " ");
-  }
-  return parts.join("\n");
+  return keepZWNJ(str, function (raw) {
+    var norm = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    norm = norm.replace(/\\n/g, "\n");
+    var parts = norm.split("\n");
+    for (var i=0; i<parts.length; i++){
+      parts[i] = parts[i].replace(/[ \t\u00A0]+/g, " ");
+    }
+    return parts.join("\n");
+  });
 }
 
 // ===== Geometry helpers =====
@@ -773,12 +800,14 @@ TextMeasureContext.prototype.lineHeight = function(){
 function splitWordsForLayout(text) {
   var s = safeTrim(toStr(text));
   if (!s) return [];
-  var raw = s.split(/[ \t\u00A0\r\n]+/);
-  var words = [];
-  for (var i = 0; i < raw.length; i++) {
-    if (raw[i]) words.push(raw[i]);
-  }
-  return words;
+  return keepZWNJ(s, function (guarded) {
+    var raw = guarded.split(/[ \t\u00A0\r\n]+/);
+    var words = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i]) words.push(raw[i]);
+    }
+    return words;
+  });
 }
 
 function greedyWrapWordsPixels(words, measureCtx, maxWidth) {
