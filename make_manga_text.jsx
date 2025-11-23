@@ -615,7 +615,7 @@ function applyFontToTextItem(textItem, requestedFont) {
 function getFontForType(type){
   var requested;
   switch(type){
-    case "Standard": requested = "IRKoodak"; break;
+    case "Standard": requested = "IRANSans Black"; break;
     case "Thought":         requested = "B Morvarid-Regular"; break;
     case "Shouting/Emotion":requested = "Potk"; break;
     case "Whisper/Soft":    requested = "A nic Regular"; break;
