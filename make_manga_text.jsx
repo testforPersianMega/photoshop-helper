@@ -687,12 +687,14 @@ function forceRTL(s){
   var RLE="\u202B", PDF="\u202C", RLM="\u200F";
   var str = toStr(s);
   if (!str) return RLM;
-  var norm = str.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  var parts = norm.split("\n");
-  for (var i=0; i<parts.length; i++){
-    parts[i] = RLM + RLE + parts[i] + PDF;
-  }
-  return parts.join("\r");
+  return keepZWNJ(str, function(raw){
+    var norm = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    var parts = norm.split("\n");
+    for (var i=0; i<parts.length; i++){
+      parts[i] = RLM + RLE + parts[i] + PDF;
+    }
+    return parts.join("\r");
+  });
 }
 
 function applyParagraphDirectionRTL() {
