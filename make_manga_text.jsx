@@ -460,12 +460,13 @@ function deriveBox(item){
 
 // ===== Fonts & RTL helpers =====
 var FONT_ALIASES = {
-  "B Koodak Bold": ["B Koodak", "BKoodak", "BKoodakBold", "B-Koodak-Bold"],
-  "B Morvarid Regular": ["B Morvarid", "B-Morvarid-Regular", "B Morvarid Fa"],
-  "AFSANEH Regular": ["AFSANEH", "AFSANEH-Regular"],
-  "Kalameh": ["Kalameh", "Kalameh-Regular"],
+  "IRKoodak": ["IRKoodak-Regular"],
+  "B Morvarid Regular": ["B Morvarid-Regular", "B Morvarid Fa"],
+  "AFSANEH": ["AFSANEH-Regular"],
+  "Potk": ["Potk-Black"],
+  "Kalameh": ["Kalameh-Regular"],
   "A nic Regular": ["A nic", "A-nic", "A-nic-Regular"],
-  "Far.Farnaz": ["Farnaz", "Far-Farnaz", "Farnaz-Regular"],
+  "IRFarnaz": ["IRFarnaz-Regular"],
   "Shabnam-BoldItalic": ["Shabnam Bold Italic", "Shabnam BoldItalic", "ShabnamBI"]
 };
 
@@ -594,12 +595,12 @@ function applyFontToTextItem(textItem, requestedFont) {
 function getFontForType(type){
   var requested;
   switch(type){
-    case "Standard": requested = "Kalameh"; break;
-    case "Thought":         requested = "B Morvarid Regular"; break;
-    case "Shouting/Emotion":requested = "AFSANEH Regular"; break;
+    case "Standard": requested = "IRKoodak"; break;
+    case "Thought":         requested = "B Morvarid-Regular"; break;
+    case "Shouting/Emotion":requested = "Potk"; break;
     case "Whisper/Soft":    requested = "A nic Regular"; break;
     case "Electronic":      requested = "Consolas"; break;
-    case "Narration":   requested = "Far.Farnaz"; break;
+    case "Narration":   requested = "IRFarnaz"; break;
     case "Distorted/Custom":requested = "Shabnam-BoldItalic"; break;
     default:                requested = "ArialMT"; break;
   }
