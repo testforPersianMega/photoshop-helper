@@ -102,6 +102,19 @@ function keepZWNJ(str, transformFn) {
   return restoreZWNJ(result, placeholder);
 }
 
+function normalizeZWNJFromText(val) {
+  var str = toStr(val);
+  if (!str) return "";
+
+  // Some exporters emit literal \u200c or &zwnj; sequences instead of the actual
+  // Zero Width Non-Joiner character. Normalize them before any whitespace
+  // cleanup so نیم‌فاصله stays intact through layout and rendering.
+  var normalized = str;
+  normalized = normalized.replace(/\u200c/gi, ZWNJ);
+  normalized = normalized.replace(/&zwnj;/gi, ZWNJ);
+  return normalized;
+}
+
 function collapseWhitespace(s){
   return keepZWNJ(s, function (txt) {
     return txt.replace(/[ \t\u00A0\r\n]+/g, " ");
@@ -1152,7 +1165,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     var item = items[i];
     if (!item) continue;
 
-    var raw = toStr(item.text);
+    var raw = normalizeZWNJFromText(item.text);
     raw = normalizeWSKeepBreaks(raw);
     raw = safeTrim(raw);
     if (!raw) continue;
