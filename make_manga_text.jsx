@@ -1186,11 +1186,6 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   log("  [autoFit] innerW=" + innerW + " innerH=" + innerH +
       (longestLine ? " longestLine=\"" + longestLine + "\"" : ""));
 
-  function estimateContentHeight(sizePx) {
-    var lineHeight = Math.max(1, Math.floor(sizePx * 1.18));
-    return lineHeight * lineCount;
-  }
-
   function sizeFits(sizePx) {
     ti.size = sizePx;
     try { ti.leading = Math.max(1, Math.floor(sizePx * 1.12)); } catch (e) {}
@@ -1201,15 +1196,13 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     var h = b.height;
 
     var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, sizePx) : w;
-    var widthOverflow  = (measuredLineWidth > innerW + 1);
-    var estHeight = estimateContentHeight(sizePx);
-    var heightOverflow = (estHeight > innerH + 1);
+    var widthOverflow  = (w > innerW + 1) || (measuredLineWidth > innerW + 1);
+    var heightOverflow = (h > innerH + 1);
     var overflow = widthOverflow || heightOverflow;
 
     log("    test size=" + sizePx +
         " bounds=(" + w.toFixed(1) + "x" + h.toFixed(1) + ")" +
         (measureLayer ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
-        " estHeight=" + estHeight.toFixed(1) +
         " overflow=" + overflow);
 
     return !overflow;
@@ -1236,7 +1229,8 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     steps++;
   }
 
-  var finalHeightEstimate = estimateContentHeight(best);
+  var finalBounds = layerBoundsPx(lyr);
+  var finalHeightEstimate = finalBounds ? finalBounds.height : innerH;
   log("  [autoFit] finalSize=" + best + " estHeight=" + finalHeightEstimate);
 
   sizeFits(best);
