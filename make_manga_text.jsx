@@ -1499,14 +1499,18 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       currentWrapped = boostedWrapped;
     }
 
-    var shouldBoostBubble = item && item.bbox_bubble && ti.size <= 18;
+    var shouldBoostBubble = item && item.bbox_bubble && ti.size <= 22;
     if (shouldBoostBubble) {
-      var boostedInnerW = Math.round(Math.min(bw * 0.90, bw));
-      var boostedInnerH = Math.round(Math.min(bh * 0.90, bh));
-      var needsBoost = (boostedInnerW > ti.width + 1) || (boostedInnerH > ti.height + 1);
+      // Give tiny bubble text a fuller box so the font can climb higher.
+      // Use essentially the whole bubble for reflowing (only keep a 1 px margin)
+      // so short multi-line strings can grow beyond the conservative padding
+      // normally used for larger text.
+      var boostedInnerW = Math.round(Math.max(ti.width, Math.min(bw - 1, bw)));
+      var boostedInnerH = Math.round(Math.max(ti.height, Math.min(bh - 1, bh)));
+      var needsBoost = (boostedInnerW > ti.width) || (boostedInnerH > ti.height);
 
       if (needsBoost) {
-        boostAndRefit(boostedInnerW, boostedInnerH, "  small text with bubble -> expanding text box to 90% of bubble");
+        boostAndRefit(boostedInnerW, boostedInnerH, "  small text with bubble -> expanding text box to full bubble");
       }
     }
 
