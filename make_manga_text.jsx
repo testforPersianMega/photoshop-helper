@@ -7,7 +7,15 @@
 
 #target photoshop
 app.displayDialogs = DialogModes.NO;
+var __origRulerUnits = app.preferences.rulerUnits;
+var __origTypeUnits = app.preferences.typeUnits;
 app.preferences.rulerUnits = Units.PIXELS;
+try { app.preferences.typeUnits = TypeUnits.PIXELS; } catch (e) {}
+
+function __restorePrefs() {
+  try { app.preferences.typeUnits = __origTypeUnits; } catch (e) {}
+  try { app.preferences.rulerUnits = __origRulerUnits; } catch (e) {}
+}
 
 // ===== USER CONFIG =====
 var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if needed
@@ -1524,8 +1532,12 @@ function runChapterBatch() {
 }
 
 // ===== ENTRY POINT =====
-if (PROCESS_WHOLE_CHAPTER) {
-  runChapterBatch();
-} else {
-  processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG);
+try {
+  if (PROCESS_WHOLE_CHAPTER) {
+    runChapterBatch();
+  } else {
+    processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG);
+  }
+} finally {
+  __restorePrefs();
 }
