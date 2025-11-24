@@ -1134,6 +1134,22 @@ function buildMeasureLayerFromLine(lyr, lineText) {
   }
 }
 
+function buildMeasureLayerFromText(lyr, text) {
+  if (!lyr || !text) return null;
+  try {
+    var measureLayer = lyr.duplicate();
+    measureLayer.visible = false;
+    var measureTi = measureLayer.textItem;
+    measureTi.kind = TextType.POINTTEXT;
+    measureTi.contents = forceRTL(toStr(text).replace(/\r/g, "\n"));
+    measureTi.justification = Justification.CENTER;
+    measureTi.position = [0, 0];
+    return measureLayer;
+  } catch (e) {
+    return null;
+  }
+}
+
 function measureLineWidthFromLayer(measureLayer, sizePx) {
   if (!measureLayer) return 0;
   try {
@@ -1143,6 +1159,18 @@ function measureLineWidthFromLayer(measureLayer, sizePx) {
     return bounds.width;
   } catch (e) {
     return 0;
+  }
+}
+
+function measureTextSizeFromLayer(measureLayer, sizePx) {
+  if (!measureLayer) return null;
+  try {
+    var ti = measureLayer.textItem;
+    ti.size = sizePx;
+    var bounds = layerBoundsPx(measureLayer);
+    return { width: bounds.width, height: bounds.height };
+  } catch (e) {
+    return null;
   }
 }
 
@@ -1217,6 +1245,7 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   }
   var lineCount = Math.max(1, lines.length || 1);
   var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
+  var measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(lyr, rawTextForLines) : null;
 
   log("  [autoFit] innerW=" + innerW + " innerH=" + innerH +
       (longestLine ? " longestLine=\"" + longestLine + "\"" : ""));
@@ -1231,13 +1260,18 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     var h = b.height;
 
     var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, sizePx) : w;
-    var widthOverflow  = (w > innerW + 1) || (measuredLineWidth > innerW + 1);
-    var heightOverflow = (h > innerH + 1);
+    var measuredAllSize = measureTextSizeFromLayer(measureAllTextLayer, sizePx);
+    var measuredAllWidth = measuredAllSize ? measuredAllSize.width : w;
+    var measuredAllHeight = measuredAllSize ? measuredAllSize.height : h;
+
+    var widthOverflow  = (w > innerW + 1) || (measuredLineWidth > innerW + 1) || (measuredAllWidth > innerW + 1);
+    var heightOverflow = (h > innerH + 1) || (measuredAllHeight > innerH + 1);
     var overflow = widthOverflow || heightOverflow;
 
     log("    test size=" + sizePx +
         " bounds=(" + w.toFixed(1) + "x" + h.toFixed(1) + ")" +
         (measureLayer ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
+        (measuredAllSize ? " measureAll=(" + measuredAllWidth.toFixed(1) + "x" + measuredAllHeight.toFixed(1) + ")" : "") +
         " overflow=" + overflow);
 
     return !overflow;
@@ -1271,6 +1305,7 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   sizeFits(best);
 
   cleanupMeasureLayer(measureLayer);
+  cleanupMeasureLayer(measureAllTextLayer);
 
   var safeHeight = Math.max(innerH, finalHeightEstimate + 20);
   if (ti.height < safeHeight) {
