@@ -1181,6 +1181,31 @@ function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight, minSize) {
   translateToCenter(lyr, cx, cy);
 }
 
+// After fitting/shrinking, make sure the paragraph box itself fully contains the rendered
+// glyph bounds so nothing gets clipped by a too-small text box.
+function expandParagraphBoxToContent(lyr, ti, cx, cy, paddingPx) {
+  if (!lyr || !ti) return;
+
+  var pad = (paddingPx === undefined) ? 6 : Math.max(0, paddingPx);
+
+  translateToCenter(lyr, cx, cy);
+
+  var bounds = layerBoundsPx(lyr);
+  if (!bounds) return;
+
+  var desiredW = Math.ceil(bounds.width + pad * 2);
+  var desiredH = Math.ceil(bounds.height + pad * 2);
+
+  var changed = false;
+
+  try {
+    if (desiredW > ti.width + 1) { ti.width = desiredW; changed = true; }
+    if (desiredH > ti.height + 1) { ti.height = desiredH; changed = true; }
+  } catch (e) {}
+
+  if (changed) translateToCenter(lyr, cx, cy);
+}
+
 function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines) {
   if (minSize === undefined) minSize = 10;
   if (maxSize === undefined) maxSize = 52;
@@ -1437,6 +1462,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var appliedSize = fitResult && fitResult.size ? fitResult.size : ti.size;
     var clampMinSize = Math.max(MIN_SIZE, Math.floor(appliedSize * 0.9));
     clampRenderedTextToBox(lyr, ti, cx, cy, ti.width, ti.height, clampMinSize);
+    expandParagraphBoxToContent(lyr, ti, cx, cy, 6);
     log("  final applied size=" + ti.size);
 
     var rot = deriveRotationDeg(item);
