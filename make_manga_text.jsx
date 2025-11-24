@@ -1433,27 +1433,46 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var MAX_SIZE = 60; // cap for binary search auto-fit
     var fitResult = autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
 
-    if (item && item.bbox_bubble && ti.size <= 16) {
+    var currentWrapped = wrapped;
+
+    function boostAndRefit(targetW, targetH, reason) {
+      ti.width = Math.max(ti.width, targetW);
+      ti.height = Math.max(ti.height, targetH);
+
+      var boostedWrapped = currentWrapped;
+      if (!hasManualBreaks) {
+        boostedWrapped = layoutBubble(baseSeedText, doc, fontName, finalSize, ti.width, ti.height);
+        if (!boostedWrapped) boostedWrapped = currentWrapped;
+        if (boostedWrapped !== currentWrapped) {
+          setTextContentsRTL(ti, boostedWrapped);
+        }
+      }
+
+      translateToCenter(lyr, cx, cy);
+      log(reason + " -> refitting in " + ti.width + "x" + ti.height);
+      fitResult = autoFitTextLayer(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE, MAX_SIZE, boostedWrapped);
+      currentWrapped = boostedWrapped;
+    }
+
+    var shouldBoostBubble = item && item.bbox_bubble && ti.size <= 16;
+    if (shouldBoostBubble) {
       var boostedInnerW = Math.round(Math.min(bw * 0.90, bw));
       var boostedInnerH = Math.round(Math.min(bh * 0.90, bh));
-      var needsBoost = (boostedInnerW > innerW + 1) || (boostedInnerH > innerH + 1);
+      var needsBoost = (boostedInnerW > ti.width + 1) || (boostedInnerH > ti.height + 1);
 
       if (needsBoost) {
-        log("  small text with bubble -> expanding text box to 90% of bubble");
-        ti.width = boostedInnerW;
-        ti.height = boostedInnerH;
+        boostAndRefit(boostedInnerW, boostedInnerH, "  small text with bubble -> expanding text box to 90% of bubble");
+      }
+    }
 
-        var boostedWrapped = wrapped;
-        if (!hasManualBreaks) {
-          boostedWrapped = layoutBubble(baseSeedText, doc, fontName, finalSize, boostedInnerW, boostedInnerH);
-          if (!boostedWrapped) boostedWrapped = wrapped;
-          if (boostedWrapped !== wrapped) {
-            setTextContentsRTL(ti, boostedWrapped);
-          }
-        }
+    var shouldBoostNoBubble = (!item || !item.bbox_bubble) && ti.size <= 16;
+    if (shouldBoostNoBubble) {
+      var boostedFreeW = Math.round(innerW * 1.5);
+      var boostedFreeH = Math.round(innerH * 1.5);
+      var needsFreeBoost = (boostedFreeW > ti.width + 1) || (boostedFreeH > ti.height + 1);
 
-        translateToCenter(lyr, cx, cy);
-        fitResult = autoFitTextLayer(lyr, ti, cx, cy, boostedInnerW, boostedInnerH, MIN_SIZE, MAX_SIZE, boostedWrapped);
+      if (needsFreeBoost) {
+        boostAndRefit(boostedFreeW, boostedFreeH, "  small text without bubble -> expanding text box x1.5");
       }
     }
 
