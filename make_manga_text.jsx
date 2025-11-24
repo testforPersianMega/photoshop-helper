@@ -1146,8 +1146,10 @@ function cleanupMeasureLayer(layer) {
 // Final safety pass: if the rendered text still overflows the intended box, shrink slightly
 // until it fits. This guards against occasional measurement inaccuracies (e.g., fonts with
 // large descenders or extra line spacing) that can leave part of the text clipped.
-function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight) {
+function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight, minSize) {
   if (!lyr || !ti) return;
+
+  if (minSize === undefined) minSize = 10;
 
   var MAX_ADJUSTMENTS = 8;
   for (var i = 0; i < MAX_ADJUSTMENTS; i++) {
@@ -1160,8 +1162,8 @@ function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight) {
 
     // Nudge the font size down based on the worst overflow dimension, but keep a floor.
     var shrink = Math.max(1, Math.ceil(Math.max(overflowW, overflowH) / 6));
-    var newSize = Math.max(6, ti.size - shrink);
-    if (newSize === ti.size) newSize = Math.max(6, ti.size - 1);
+    var newSize = Math.max(minSize, ti.size - shrink);
+    if (newSize === ti.size) newSize = Math.max(minSize, ti.size - 1);
     if (newSize === ti.size) break;
 
     ti.size = newSize;
@@ -1419,7 +1421,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
     // Extra safety: if the text still exceeds the paragraph box (rare but happens with
     // certain fonts or punctuation), shrink gently until everything is visible.
-    clampRenderedTextToBox(lyr, ti, cx, cy, ti.width, ti.height);
+    clampRenderedTextToBox(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE);
 
     var rot = deriveRotationDeg(item);
     if (rot && Math.abs(rot) > 0.001) {
