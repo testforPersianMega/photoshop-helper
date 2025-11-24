@@ -1499,14 +1499,17 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       currentWrapped = boostedWrapped;
     }
 
-    var shouldBoostBubble = item && item.bbox_bubble && ti.size <= 18;
+    var shouldBoostBubble = item && item.bbox_bubble && ti.size <= 22;
     if (shouldBoostBubble) {
-      var boostedInnerW = Math.round(Math.min(bw * 0.90, bw));
-      var boostedInnerH = Math.round(Math.min(bh * 0.90, bh));
+      // Give tiny bubble text a fuller box so the font can climb higher.
+      // Using 98% of the bubble keeps a slim safety margin while allowing
+      // noticeably larger text compared to the previous 90% cap.
+      var boostedInnerW = Math.round(Math.min(bw * 0.98, bw));
+      var boostedInnerH = Math.round(Math.min(bh * 0.98, bh));
       var needsBoost = (boostedInnerW > ti.width + 1) || (boostedInnerH > ti.height + 1);
 
       if (needsBoost) {
-        boostAndRefit(boostedInnerW, boostedInnerH, "  small text with bubble -> expanding text box to 90% of bubble");
+        boostAndRefit(boostedInnerW, boostedInnerH, "  small text with bubble -> expanding text box to 98% of bubble");
       }
     }
 
