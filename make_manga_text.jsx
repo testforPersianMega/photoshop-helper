@@ -11,8 +11,8 @@ app.preferences.rulerUnits = Units.PIXELS;
 
 // ===== USER CONFIG =====
 var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if needed
-var imageFile   = File(scriptFolder + "/wild/raw 48/0048-025.png");
-var jsonFile    = File(scriptFolder + "/wild/json final/0048-025.json");
+var imageFile   = File(scriptFolder + "/wild/raw 48/0048-001.png");
+var jsonFile    = File(scriptFolder + "/wild/json final/0048-001.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 var outputJPG   = File(scriptFolder + "/manga_output.jpg");
 var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of the PSD
@@ -1370,6 +1370,20 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var MIN_SIZE = 12;
     var MAX_SIZE = 60; // cap for binary search auto-fit
     autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
+
+    if (item && item.bbox_bubble && ti.size <= 16) {
+      var boostedInnerW = Math.round(Math.min(bw * 0.90, bw));
+      var boostedInnerH = Math.round(Math.min(bh * 0.90, bh));
+      var needsBoost = (boostedInnerW > innerW + 1) || (boostedInnerH > innerH + 1);
+
+      if (needsBoost) {
+        log("  small text with bubble -> expanding text box to 90% of bubble");
+        ti.width = boostedInnerW;
+        ti.height = boostedInnerH;
+        translateToCenter(lyr, cx, cy);
+        autoFitTextLayer(lyr, ti, cx, cy, boostedInnerW, boostedInnerH, MIN_SIZE, MAX_SIZE, wrapped);
+      }
+    }
 
     var rot = deriveRotationDeg(item);
     if (rot && Math.abs(rot) > 0.001) {
