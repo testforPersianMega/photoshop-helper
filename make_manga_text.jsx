@@ -1254,6 +1254,11 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   }
 
   translateToCenter(lyr, cx, cy);
+
+  return {
+    size: best,
+    height: ti.height
+  };
 }
 
 function ensureFolderExists(folder) {
@@ -1401,7 +1406,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
     var MIN_SIZE = 12;
     var MAX_SIZE = 60; // cap for binary search auto-fit
-    autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
+    var fitResult = autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
 
     if (item && item.bbox_bubble && ti.size <= 16) {
       var boostedInnerW = Math.round(Math.min(bw * 0.90, bw));
@@ -1423,13 +1428,16 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
         }
 
         translateToCenter(lyr, cx, cy);
-        autoFitTextLayer(lyr, ti, cx, cy, boostedInnerW, boostedInnerH, MIN_SIZE, MAX_SIZE, boostedWrapped);
+        fitResult = autoFitTextLayer(lyr, ti, cx, cy, boostedInnerW, boostedInnerH, MIN_SIZE, MAX_SIZE, boostedWrapped);
       }
     }
 
     // Extra safety: if the text still exceeds the paragraph box (rare but happens with
     // certain fonts or punctuation), shrink gently until everything is visible.
-    clampRenderedTextToBox(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE);
+    var appliedSize = fitResult && fitResult.size ? fitResult.size : ti.size;
+    var clampMinSize = Math.max(MIN_SIZE, Math.floor(appliedSize * 0.9));
+    clampRenderedTextToBox(lyr, ti, cx, cy, ti.width, ti.height, clampMinSize);
+    log("  final applied size=" + ti.size);
 
     var rot = deriveRotationDeg(item);
     if (rot && Math.abs(rot) > 0.001) {
