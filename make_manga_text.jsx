@@ -168,6 +168,16 @@ function normalizeItemsZWNJ(items) {
 
 // ===== Geometry helpers =====
 function solidBlack(){ var c=new SolidColor(); c.rgb.red=0;c.rgb.green=0;c.rgb.blue=0; return c; }
+function solidWhite(){ var c=new SolidColor(); c.rgb.red=255;c.rgb.green=255;c.rgb.blue=255; return c; }
+function buildItemPalette(item) {
+  var reversed = !!(item && item.reverse_color === true);
+  return {
+    textColor: reversed ? solidWhite() : solidBlack(),
+    strokeColor: reversed ? solidBlack() : solidWhite(),
+    simpleBgColor: reversed ? solidWhite() : solidBlack(),
+    reversed: reversed
+  };
+}
 function clampInt(v){ return Math.round(v); }
 function layerBoundsPx(lyr){
   var b = lyr.bounds;
@@ -187,6 +197,44 @@ function layerCenterPx(lyr){
 function translateToCenter(lyr, cx, cy){
   var c = layerCenterPx(lyr);
   lyr.translate(cx - c.x, cy - c.y);
+}
+
+function applyStrokeColor(layer, sizePx, color) {
+  if (!layer) return;
+  var strokeSize = (typeof sizePx === 'number' && sizePx > 0) ? sizePx : 2;
+  var col = (color && color.rgb) ? color.rgb : solidWhite().rgb;
+  try {
+    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
+    var desc = new ActionDescriptor();
+    var ref = new ActionReference();
+    ref.putProperty(c2t('Prpr'), s2t('layerEffects'));
+    ref.putEnumerated(c2t('Lyr '), c2t('Ordn'), c2t('Trgt'));
+    desc.putReference(c2t('null'), ref);
+
+    var effects = new ActionDescriptor();
+    var stroke = new ActionDescriptor();
+
+    stroke.putBoolean(s2t('enabled'), true);
+    stroke.putBoolean(s2t('present'), true);
+    stroke.putBoolean(s2t('showInDialog'), true);
+    stroke.putEnumerated(s2t('style'), s2t('frameStyle'), s2t('outsetFrame'));
+    stroke.putEnumerated(s2t('paintType'), s2t('paintType'), s2t('solidColor'));
+    stroke.putEnumerated(s2t('mode'), s2t('blendMode'), s2t('normal'));
+    stroke.putUnitDouble(s2t('opacity'), c2t('#Prc'), 100.0);
+    stroke.putUnitDouble(s2t('size'), c2t('#Pxl'), strokeSize);
+
+    var colorDesc = new ActionDescriptor();
+    colorDesc.putDouble(c2t('Rd  '), col.red);
+    colorDesc.putDouble(c2t('Grn '), col.green);
+    colorDesc.putDouble(c2t('Bl  '), col.blue);
+    stroke.putObject(c2t('Clr '), c2t('RGBC'), colorDesc);
+
+    effects.putObject(s2t('frameFX'), s2t('frameFX'), stroke);
+    desc.putObject(c2t('T   '), s2t('layerEffects'), effects);
+    executeAction(c2t('setd'), desc, DialogModes.NO);
+  } catch (e) {
+    log('  ⚠️ unable to apply stroke: ' + e);
+  }
 }
 
 function getBasePixelLayer(doc){
@@ -450,7 +498,7 @@ function collectRemovalSegments(item){
   return result;
 }
 
-function removeOldTextSegments(doc, item, scaleX, scaleY){
+function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
   var segmentsInfo = collectRemovalSegments(item);
   if (!segmentsInfo.segments.length) {
     log('  ⚠️ no segments available for content-aware fill');
@@ -468,6 +516,7 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
   }
   doc.activeLayer = cleanupLayer;
   try { doc.selection.deselect(); } catch (e) {}
+  var useContentAware = !(item && item.complex_background === false);
   if (segmentsInfo.source !== 'json') {
     log('  deriving removal segments from ' + segmentsInfo.source);
   }
@@ -477,12 +526,22 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
     return;
   }
   highlightSelectionForDebug(doc, cleanupLayer);
-  log('  removing original text via content-aware fill over ' + segmentsInfo.segments.length + ' segments');
-  var filled = contentAwareFillSelection();
-  try { doc.selection.deselect(); } catch (e2) {}
-  if (!filled) {
-    log('  ⚠️ content-aware fill skipped due to error');
+  if (useContentAware) {
+    log('  removing original text via content-aware fill over ' + segmentsInfo.segments.length + ' segments');
+    var filled = contentAwareFillSelection();
+    if (!filled) {
+      log('  ⚠️ content-aware fill skipped due to error');
+    }
+  } else {
+    var fillColor = (palette && palette.simpleBgColor) ? palette.simpleBgColor : solidBlack();
+    log('  simple background -> filling selection with color over ' + segmentsInfo.segments.length + ' segments');
+    try {
+      doc.selection.fill(fillColor);
+    } catch (fillErr) {
+      log('  ⚠️ unable to fill selection: ' + fillErr);
+    }
   }
+  try { doc.selection.deselect(); } catch (e2) {}
 }
 
 // ===== Centers/boxes =====اه
@@ -1019,7 +1078,7 @@ function setTextContentsRTL(ti, text) {
   ti.contents = forceRTL(text);
 }
 
-function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH){
+function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH, textColor){
   var left = cx - innerW/2, top = cy - innerH/2;
   var lyr = doc.artLayers.add();
   lyr.kind = LayerKind.TEXT;
@@ -1033,7 +1092,7 @@ function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, inn
   ti.position = [left, top];
   ti.width  = innerW;
   ti.height = innerH;
-  try { ti.color = app.foregroundColor; } catch(e){ ti.color = solidBlack(); }
+  try { ti.color = textColor ? textColor : solidBlack(); } catch(e){ ti.color = solidBlack(); }
   return lyr;
 }
 
@@ -1215,6 +1274,8 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var item = items[i];
     if (!item) continue;
 
+    var palette = buildItemPalette(item);
+
     var raw = toStr(item.text);
     raw = normalizeWSKeepBreaks(raw);
     raw = safeTrim(raw);
@@ -1233,7 +1294,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var cx = clampInt(c.x * scaleX), cy = clampInt(c.y * scaleY);
     log("  center=(" + cx + "," + cy + ")");
 
-    removeOldTextSegments(doc, item, scaleX, scaleY);
+    removeOldTextSegments(doc, item, scaleX, scaleY, palette);
 
     var box = deriveBox(item);
     var PAD_FRAC = 0.10, MIN_W = 70, MIN_H = 60;
@@ -1289,7 +1350,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var finalSize = baseSize;
     log("  startSize(final)=" + finalSize + " font=" + fontName);
 
-    var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH);
+    var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH, palette.textColor);
     var ti  = lyr.textItem;
 
     app.activeDocument.activeLayer = lyr;
@@ -1300,6 +1361,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     ti = lyr.textItem;
     setTextContentsRTL(ti, wrapped); // reapply after direction/composer to avoid ZWNJ loss
     applyFontToTextItem(ti, fontName); // restore font if direction/composer reset it
+    try { ti.color = palette.textColor; } catch (colorErr) { ti.color = solidBlack(); }
     ti.justification = Justification.CENTER;
 
     ti.position = [cx - ti.width/2, cy - ti.height/2];
@@ -1315,6 +1377,12 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       lyr.rotate(rot, AnchorPosition.MIDDLECENTER);
     }
     translateToCenter(lyr, cx, cy);
+
+    if (item && item.stroke === true) {
+      log('  applying 2px stroke');
+      try { doc.activeLayer = lyr; } catch (strokeErr) {}
+      applyStrokeColor(lyr, 2, palette.strokeColor);
+    }
   }
 
   // ===== SAVE =====
