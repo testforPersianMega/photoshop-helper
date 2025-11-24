@@ -11,8 +11,8 @@ app.preferences.rulerUnits = Units.PIXELS;
 
 // ===== USER CONFIG =====
 var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if needed
-var imageFile   = File(scriptFolder + "/wild/raw 48/");
-var jsonFile    = File(scriptFolder + "/wild/json final");
+var imageFile   = File(scriptFolder + "/wild/raw 48/0048-025.png");
+var jsonFile    = File(scriptFolder + "/wild/json final/0048-025.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 var outputJPG   = File(scriptFolder + "/manga_output.jpg");
 var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of the PSD
@@ -21,7 +21,7 @@ var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of th
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
-var PROCESS_WHOLE_CHAPTER = true;
+var PROCESS_WHOLE_CHAPTER = false;
 var chapterImagesFolder  = Folder(scriptFolder + "/wild/raw 48");
 var chapterJsonFolder    = Folder(scriptFolder + "/wild/json final");
 var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
@@ -174,7 +174,7 @@ function buildItemPalette(item) {
   return {
     textColor: reversed ? solidWhite() : solidBlack(),
     strokeColor: reversed ? solidBlack() : solidWhite(),
-    simpleBgColor: reversed ? solidWhite() : solidBlack(),
+    simpleBgColor: reversed ? solidBlack() : solidWhite(),
     reversed: reversed
   };
 }
@@ -1312,7 +1312,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     log("  bubbleSize=(" + bw + "x" + bh + ") pad=" + pad + " inner=(" + innerW + "x" + innerH + ")");
 
     var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
-    var fontName  = getFontForType(item.text_type || "Standard");
+    var fontName  = getFontForType(item.bubble_type || "Standard");
 
     // build text seed
     var baseSeedText;
@@ -1380,9 +1380,9 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
     var needsStroke = item && !item.bbox_bubble && item.complex_background === true;
     if (needsStroke) {
-      log('  complex background without bbox -> applying 2px stroke');
+      log('  complex background without bbox -> applying 3px stroke');
       try { doc.activeLayer = lyr; } catch (strokeErr) {}
-      applyStrokeColor(lyr, 2, palette.strokeColor);
+      applyStrokeColor(lyr, 3, palette.strokeColor);
     }
   }
 
