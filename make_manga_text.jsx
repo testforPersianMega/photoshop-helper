@@ -1149,22 +1149,19 @@ function cleanupMeasureLayer(layer) {
 function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight) {
   if (!lyr || !ti) return;
 
-  var startSize = ti.size;
-  var MIN_KEEP = Math.max(6, Math.floor(startSize * 0.92)); // never shrink more than ~8%
-  var MAX_ADJUSTMENTS = 6;
+  var MAX_ADJUSTMENTS = 8;
   for (var i = 0; i < MAX_ADJUSTMENTS; i++) {
     translateToCenter(lyr, cx, cy);
     var bounds = layerBoundsPx(lyr);
     var overflowW = bounds.width - maxWidth;
     var overflowH = bounds.height - maxHeight;
 
-    if (overflowW <= 1 && overflowH <= 1) break; // within rounding tolerance
-    if (ti.size <= MIN_KEEP) break; // avoid undoing autofit by over-shrinking
+    if (overflowW <= 1 && overflowH <= 1) break;
 
     // Nudge the font size down based on the worst overflow dimension, but keep a floor.
-    var shrink = Math.max(1, Math.ceil(Math.max(overflowW, overflowH) / 8));
-    var newSize = Math.max(MIN_KEEP, ti.size - shrink);
-    if (newSize === ti.size) newSize = Math.max(MIN_KEEP, ti.size - 1);
+    var shrink = Math.max(1, Math.ceil(Math.max(overflowW, overflowH) / 6));
+    var newSize = Math.max(6, ti.size - shrink);
+    if (newSize === ti.size) newSize = Math.max(6, ti.size - 1);
     if (newSize === ti.size) break;
 
     ti.size = newSize;
