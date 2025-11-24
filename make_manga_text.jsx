@@ -1378,8 +1378,9 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     }
     translateToCenter(lyr, cx, cy);
 
-    if (item && item.stroke === true) {
-      log('  applying 2px stroke');
+    var needsStroke = item && !item.bbox_bubble && item.complex_background === true;
+    if (needsStroke) {
+      log('  complex background without bbox -> applying 2px stroke');
       try { doc.activeLayer = lyr; } catch (strokeErr) {}
       applyStrokeColor(lyr, 2, palette.strokeColor);
     }
