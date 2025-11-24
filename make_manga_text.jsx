@@ -1380,8 +1380,18 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
         log("  small text with bubble -> expanding text box to 90% of bubble");
         ti.width = boostedInnerW;
         ti.height = boostedInnerH;
+
+        var boostedWrapped = wrapped;
+        if (!hasManualBreaks) {
+          boostedWrapped = layoutBubble(baseSeedText, doc, fontName, finalSize, boostedInnerW, boostedInnerH);
+          if (!boostedWrapped) boostedWrapped = wrapped;
+          if (boostedWrapped !== wrapped) {
+            setTextContentsRTL(ti, boostedWrapped);
+          }
+        }
+
         translateToCenter(lyr, cx, cy);
-        autoFitTextLayer(lyr, ti, cx, cy, boostedInnerW, boostedInnerH, MIN_SIZE, MAX_SIZE, wrapped);
+        autoFitTextLayer(lyr, ti, cx, cy, boostedInnerW, boostedInnerH, MIN_SIZE, MAX_SIZE, boostedWrapped);
       }
     }
 
