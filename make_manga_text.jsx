@@ -1143,6 +1143,34 @@ function cleanupMeasureLayer(layer) {
   try { layer.remove(); } catch (e) {}
 }
 
+// Final safety pass: if the rendered text still overflows the intended box, shrink slightly
+// until it fits. This guards against occasional measurement inaccuracies (e.g., fonts with
+// large descenders or extra line spacing) that can leave part of the text clipped.
+function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight) {
+  if (!lyr || !ti) return;
+
+  var MAX_ADJUSTMENTS = 8;
+  for (var i = 0; i < MAX_ADJUSTMENTS; i++) {
+    translateToCenter(lyr, cx, cy);
+    var bounds = layerBoundsPx(lyr);
+    var overflowW = bounds.width - maxWidth;
+    var overflowH = bounds.height - maxHeight;
+
+    if (overflowW <= 1 && overflowH <= 1) break;
+
+    // Nudge the font size down based on the worst overflow dimension, but keep a floor.
+    var shrink = Math.max(1, Math.ceil(Math.max(overflowW, overflowH) / 6));
+    var newSize = Math.max(6, ti.size - shrink);
+    if (newSize === ti.size) newSize = Math.max(6, ti.size - 1);
+    if (newSize === ti.size) break;
+
+    ti.size = newSize;
+    try { ti.leading = Math.max(1, Math.floor(newSize * 1.12)); } catch (e) {}
+  }
+
+  translateToCenter(lyr, cx, cy);
+}
+
 function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines) {
   if (minSize === undefined) minSize = 10;
   if (maxSize === undefined) maxSize = 52;
@@ -1394,6 +1422,10 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
         autoFitTextLayer(lyr, ti, cx, cy, boostedInnerW, boostedInnerH, MIN_SIZE, MAX_SIZE, boostedWrapped);
       }
     }
+
+    // Extra safety: if the text still exceeds the paragraph box (rare but happens with
+    // certain fonts or punctuation), shrink gently until everything is visible.
+    clampRenderedTextToBox(lyr, ti, cx, cy, ti.width, ti.height);
 
     var rot = deriveRotationDeg(item);
     if (rot && Math.abs(rot) > 0.001) {
