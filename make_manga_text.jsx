@@ -11,8 +11,8 @@ app.preferences.rulerUnits = Units.PIXELS;
 
 // ===== USER CONFIG =====
 var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if needed
-var imageFile   = File(scriptFolder + "/wild/raw 48/0048-001.png");
-var jsonFile    = File(scriptFolder + "/wild/json final/0048-001.json");
+var imageFile   = File(scriptFolder + "/wild/raw 48/0048-015.png");
+var jsonFile    = File(scriptFolder + "/wild/json final/0048-015.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
 var outputJPG   = File(scriptFolder + "/manga_output.jpg");
 var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of the PSD
