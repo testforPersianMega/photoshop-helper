@@ -1179,6 +1179,12 @@ function cleanupMeasureLayer(layer) {
   try { layer.remove(); } catch (e) {}
 }
 
+function overflowSlackPx(innerW, innerH) {
+  var slackW = Math.max(2, Math.min(6, Math.round(innerW * 0.03)));
+  var slackH = Math.max(2, Math.min(6, Math.round(innerH * 0.03)));
+  return { w: slackW, h: slackH };
+}
+
 // Final safety pass: if the rendered text still overflows the intended box, shrink slightly
 // until it fits. This guards against occasional measurement inaccuracies (e.g., fonts with
 // large descenders or extra line spacing) that can leave part of the text clipped.
@@ -1187,6 +1193,7 @@ function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight, minSize) {
 
   if (minSize === undefined) minSize = 10;
 
+  var slack = overflowSlackPx(maxWidth, maxHeight);
   var MAX_ADJUSTMENTS = 8;
   for (var i = 0; i < MAX_ADJUSTMENTS; i++) {
     translateToCenter(lyr, cx, cy);
@@ -1194,10 +1201,11 @@ function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight, minSize) {
     var overflowW = bounds.width - maxWidth;
     var overflowH = bounds.height - maxHeight;
 
-    if (overflowW <= 1 && overflowH <= 1) break;
+    if (overflowW <= slack.w && overflowH <= slack.h) break;
 
     // Nudge the font size down based on the worst overflow dimension, but keep a floor.
-    var shrink = Math.max(1, Math.ceil(Math.max(overflowW, overflowH) / 6));
+    var worstOverflow = Math.max(overflowW - slack.w, overflowH - slack.h);
+    var shrink = Math.max(1, Math.ceil(worstOverflow / 8));
     var newSize = Math.max(minSize, ti.size - shrink);
     if (newSize === ti.size) newSize = Math.max(minSize, ti.size - 1);
     if (newSize === ti.size) break;
@@ -1247,6 +1255,8 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
   var measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(lyr, rawTextForLines) : null;
 
+  var slack = overflowSlackPx(innerW, innerH);
+
   log("  [autoFit] innerW=" + innerW + " innerH=" + innerH +
       (longestLine ? " longestLine=\"" + longestLine + "\"" : ""));
 
@@ -1264,8 +1274,8 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     var measuredAllWidth = measuredAllSize ? measuredAllSize.width : w;
     var measuredAllHeight = measuredAllSize ? measuredAllSize.height : h;
 
-    var widthOverflow  = (w > innerW + 1) || (measuredLineWidth > innerW + 1) || (measuredAllWidth > innerW + 1);
-    var heightOverflow = (h > innerH + 1) || (measuredAllHeight > innerH + 1);
+    var widthOverflow  = (w > innerW + slack.w) || (measuredLineWidth > innerW + slack.w) || (measuredAllWidth > innerW + slack.w);
+    var heightOverflow = (h > innerH + slack.h) || (measuredAllHeight > innerH + slack.h);
     var overflow = widthOverflow || heightOverflow;
 
     log("    test size=" + sizePx +
