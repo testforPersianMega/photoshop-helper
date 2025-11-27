@@ -799,78 +799,16 @@ function getFontForType(type){
   return resolveFontOrFallback(requested);
 }
 
-function forceRTL(s){
-  var RLE="\u202B", PDF="\u202C", RLM="\u200F";
-  var str = toStr(s);
-  if (!str) return RLM;
-  return keepZWNJ(str, function(raw){
-    var norm = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    var parts = norm.split("\n");
-    for (var i=0; i<parts.length; i++){
-      parts[i] = RLM + RLE + parts[i] + PDF;
-    }
-    return parts.join("\r");
-  });
-}
-
-function applyParagraphDirectionRTL(textForDirection) {
-  try {
-    if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return;
-    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
-    var ti  = app.activeDocument.activeLayer.textItem;
-    var txt = forceRTL(textForDirection !== undefined ? textForDirection : ti.contents);
-    var len = txt.length;
-
-    var desc = new ActionDescriptor();
-    var ref  = new ActionReference();
-    ref.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
-    desc.putReference(c2t('null'), ref);
-
-    var textDesc = new ActionDescriptor();
-
-    var psList  = new ActionList();
-    var psRange = new ActionDescriptor();
-    psRange.putInteger(s2t('from'), 0);
-    psRange.putInteger(s2t('to'),   len);
-
-    var pStyle = new ActionDescriptor();
-    pStyle.putEnumerated(
-      s2t('paragraphDirection'),
-      s2t('paragraphDirection'),
-      s2t('RightToLeftParagraph')
-    );
-    pStyle.putEnumerated(
-      s2t('justification'),
-      s2t('justification'),
-      s2t('center')
-    );
-
-    psRange.putObject(s2t('paragraphStyle'), s2t('paragraphStyle'), pStyle);
-    psList.putObject(s2t('paragraphStyleRange'), psRange);
-    textDesc.putList(s2t('paragraphStyleRange'), psList);
-
-    desc.putObject(c2t('T   '), s2t('textLayer'), textDesc);
-    executeAction(c2t('setd'), desc, DialogModes.NO);
-
-    ti.justification = Justification.CENTER;
-  } catch(e) {}
-}
-
-function trySetMEEveryLineComposer() {
-  try {
-    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
-    var d = new ActionDescriptor(), r = new ActionReference();
-    r.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
-    d.putReference(c2t('null'), r);
-    var t = new ActionDescriptor();
-    t.putEnumerated(
-      s2t('textComposer'),
-      s2t('textComposer'),
-      s2t('adbeMEEveryLineComposer')
-    );
-    d.putObject(c2t('T   '), s2t('textLayer'), t);
-    executeAction(c2t('setd'), d, DialogModes.NO);
-  } catch (e) {}
+function applyNativeRTLTextSettings(textItem) {
+  if (!textItem) return;
+  try { textItem.textComposer = TextComposerType.MIDDLEEASTERN; } catch (e) {}
+  try { textItem.justification = Justification.CENTER; } catch (e) {}
+  try { textItem.direction = DirectionType.RIGHTTOLEFT; } catch (e) {}
+  try { textItem.useAutoLeading = true; } catch (e) {}
+  try { textItem.applyAsianOpenTypeFeatures = true; } catch (e) {}
+  try { textItem.applyStandardLigatures = true; } catch (e) {}
+  try { textItem.applyDiscretionaryLigatures = true; } catch (e) {}
+  try { textItem.autoKern = AutoKernType.AUTO; } catch (e) {}
 }
 
 function deriveRotationDeg(item){
@@ -888,10 +826,10 @@ function TextMeasureContext(doc, fontName, sizePx) {
   this.layer.opacity = 0;
   var ti = this.layer.textItem;
   ti.kind = TextType.POINTTEXT;
+  applyNativeRTLTextSettings(ti);
   ti.contents = ".";
   applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
-  ti.justification = Justification.CENTER;
   ti.position = [0, 0];
   this.textItem = ti;
   this.size = sizePx;
@@ -905,7 +843,7 @@ TextMeasureContext.prototype.measureWidth = function(text){
   if (!text) return 0;
   try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
   this.layer.visible = true;
-  setTextContentsRTL(this.textItem, text);
+  setTextContents(this.textItem, text);
   var bounds = layerBoundsPx(this.layer);
   return bounds.width;
 };
@@ -1081,9 +1019,9 @@ function estimateSafeFontSizeForWrapped(wrapped, innerW, innerH, baseSize){
 }
 
 // Create paragraph exactly the inner bubble size
-function setTextContentsRTL(ti, text) {
+function setTextContents(ti, text) {
   if (!ti) return;
-  ti.contents = forceRTL(text);
+  ti.contents = toStr(text);
 }
 
 function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH, textColor){
@@ -1092,11 +1030,11 @@ function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, inn
   lyr.kind = LayerKind.TEXT;
   var ti = lyr.textItem;
   ti.kind = TextType.PARAGRAPHTEXT;
-  setTextContentsRTL(ti, text);
+  applyNativeRTLTextSettings(ti);
+  setTextContents(ti, text);
   applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
   try { ti.leading = Math.max(1, Math.floor(sizePx * 1.18)); } catch(e){}
-  ti.justification = Justification.CENTER;
   ti.position = [left, top];
   ti.width  = innerW;
   ti.height = innerH;
@@ -1125,8 +1063,8 @@ function buildMeasureLayerFromLine(lyr, lineText) {
     measureLayer.visible = false;
     var measureTi = measureLayer.textItem;
     measureTi.kind = TextType.POINTTEXT;
-    measureTi.contents = forceRTL(lineText);
-    measureTi.justification = Justification.CENTER;
+    applyNativeRTLTextSettings(measureTi);
+    setTextContents(measureTi, lineText);
     measureTi.position = [0, 0];
     return measureLayer;
   } catch (e) {
@@ -1141,8 +1079,8 @@ function buildMeasureLayerFromText(lyr, text) {
     measureLayer.visible = false;
     var measureTi = measureLayer.textItem;
     measureTi.kind = TextType.POINTTEXT;
-    measureTi.contents = forceRTL(toStr(text).replace(/\r/g, "\n"));
-    measureTi.justification = Justification.CENTER;
+    applyNativeRTLTextSettings(measureTi);
+    setTextContents(measureTi, toStr(text).replace(/\r/g, "\n"));
     measureTi.position = [0, 0];
     return measureLayer;
   } catch (e) {
@@ -1461,15 +1399,11 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var ti  = lyr.textItem;
 
     app.activeDocument.activeLayer = lyr;
-    applyParagraphDirectionRTL(wrapped);
-    trySetMEEveryLineComposer();
-    applyParagraphDirectionRTL();
-
     ti = lyr.textItem;
-    setTextContentsRTL(ti, wrapped); // reapply after direction/composer to avoid ZWNJ loss
+    applyNativeRTLTextSettings(ti);
+    setTextContents(ti, wrapped);
     applyFontToTextItem(ti, fontName); // restore font if direction/composer reset it
     try { ti.color = palette.textColor; } catch (colorErr) { ti.color = solidBlack(); }
-    ti.justification = Justification.CENTER;
 
     ti.position = [cx - ti.width/2, cy - ti.height/2];
     translateToCenter(lyr, cx, cy);
@@ -1489,7 +1423,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
         boostedWrapped = layoutBubble(baseSeedText, doc, fontName, finalSize, ti.width, ti.height);
         if (!boostedWrapped) boostedWrapped = currentWrapped;
         if (boostedWrapped !== currentWrapped) {
-          setTextContentsRTL(ti, boostedWrapped);
+          setTextContents(ti, boostedWrapped);
         }
       }
 
