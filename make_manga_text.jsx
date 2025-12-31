@@ -207,6 +207,34 @@ function translateToCenter(lyr, cx, cy){
   lyr.translate(cx - c.x, cy - c.y);
 }
 
+function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio, minPointSize, cx, cy) {
+  if (!lyr || !ti || !item) return;
+  if (!item.bbox_bubble) return;
+
+  var threshold = (typeof minPointSize === "number") ? minPointSize : 18;
+  if (ti.size >= threshold) return;
+
+  var bubbleBox = normalizeBox(item.bbox_bubble);
+  if (!bubbleBox) return;
+
+  var ratio = (typeof fillRatio === "number") ? fillRatio : 0.9;
+  var bubbleW = Math.max(1, (bubbleBox.right - bubbleBox.left) * scaleX);
+  var bubbleH = Math.max(1, (bubbleBox.bottom - bubbleBox.top) * scaleY);
+  var targetW = bubbleW * ratio;
+  var targetH = bubbleH * ratio;
+
+  var bounds = layerBoundsPx(lyr);
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+
+  var scaleW = targetW / bounds.width;
+  var scaleH = targetH / bounds.height;
+  var scale = Math.min(scaleW, scaleH);
+  if (scale <= 1) return;
+
+  lyr.resize(scale * 100, scale * 100, AnchorPosition.MIDDLECENTER);
+  translateToCenter(lyr, cx, cy);
+}
+
 function applyStrokeColor(layer, sizePx, color) {
   if (!layer) return;
   var strokeSize = (typeof sizePx === 'number' && sizePx > 0) ? sizePx : 2;
@@ -1546,6 +1574,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       lyr.rotate(rot, AnchorPosition.MIDDLECENTER);
     }
     translateToCenter(lyr, cx, cy);
+    scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, 0.9, 18, cx, cy);
 
     var needsStroke = item && !item.bbox_bubble && item.complex_background === true;
     if (needsStroke) {
