@@ -40,18 +40,17 @@ var LOG_TO_FILE = true;
 var DEBUG_CONTENT_AWARE = false; // highlight removal selections for debugging
 var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
-var __logHandle = null; // keep file open for the whole run to avoid per-log IO cost
 
 function initLog() {
   if (!LOG_TO_FILE) return;
   try {
     logFile.encoding = "UTF8";
     logFile.open("a");
-    __logHandle = logFile;
     var now = new Date();
     logFile.writeln("\n==============================");
     logFile.writeln("Run at: " + now.toString());
     logFile.writeln("==============================");
+    logFile.close();
   } catch (e) {}
 }
 
@@ -59,20 +58,14 @@ function log(msg){
   if (DEBUG) {
     try { $.writeln(msg); } catch(e) {}
   }
-  if (LOG_TO_FILE && __logHandle) {
+  if (LOG_TO_FILE) {
     try {
-      __logHandle.writeln(msg);
-    } catch(e) {
-      // If logging fails, disable file logging but continue the script.
-      __logHandle = null;
-    }
+      logFile.encoding = "UTF8";
+      logFile.open("a");
+      logFile.writeln(msg);
+      logFile.close();
+    } catch(e) {}
   }
-}
-
-function closeLog() {
-  if (!__logHandle) return;
-  try { __logHandle.close(); } catch (e) {}
-  __logHandle = null;
 }
 initLog();
 
@@ -886,69 +879,33 @@ function deriveRotationDeg(item){
   return 0;
 }
 
-// ===== Measurement layer cache (avoid duplicate hidden layers) =====
-function getMeasureCache(doc) {
-  if (!doc) return {};
-  if (!doc._measureCache) doc._measureCache = {};
-  return doc._measureCache;
-}
-
-function ensureMeasureLayer(doc, cacheKey, fontName, sizeKey) {
-  if (!doc) return null;
-  var cache = getMeasureCache(doc);
-  var key = cacheKey + "|" + (fontName || "") + "|" + (sizeKey || "");
-  var entry = cache[key];
-  if (entry && entry.layer) {
-    try { entry.layer.bounds; return entry; } catch (e) {}
-  }
-
-  var layer = doc.artLayers.add();
-  layer.name = "__measure__" + cacheKey;
-  layer.kind = LayerKind.TEXT;
-  layer.opacity = 0;
-  layer.visible = true;
-  var ti = layer.textItem;
-  ti.kind = TextType.POINTTEXT;
-  ti.contents = ".";
-  applyFontToTextItem(ti, fontName);
-  ti.justification = Justification.CENTER;
-  ti.position = [0, 0];
-
-  entry = { layer: layer, textItem: ti };
-  cache[key] = entry;
-  return entry;
-}
-
-function setMeasureLayerText(entry, text) {
-  if (!entry || !entry.textItem) return;
-  setTextContentsRTL(entry.textItem, text);
-  entry.textItem.justification = Justification.CENTER;
-  entry.textItem.position = [0, 0];
-}
-
 // ===== Precise wrapping inspired by the Python helper =====
 function TextMeasureContext(doc, fontName, sizePx) {
   this.doc = doc;
-  var entry = ensureMeasureLayer(doc, "layout", fontName, sizePx);
-  this.layer = entry ? entry.layer : null;
-  this.textItem = entry ? entry.textItem : null;
-  if (this.textItem) {
-    applyFontToTextItem(this.textItem, fontName);
-    this.textItem.size = sizePx;
-    this.textItem.justification = Justification.CENTER;
-    this.textItem.position = [0, 0];
-  }
+  this.layer = doc.artLayers.add();
+  this.layer.name = "__measure__";
+  this.layer.kind = LayerKind.TEXT;
+  this.layer.opacity = 0;
+  var ti = this.layer.textItem;
+  ti.kind = TextType.POINTTEXT;
+  ti.contents = ".";
+  applyFontToTextItem(ti, fontName);
+  ti.size = sizePx;
+  ti.justification = Justification.CENTER;
+  ti.position = [0, 0];
+  this.textItem = ti;
   this.size = sizePx;
 }
 
 TextMeasureContext.prototype.dispose = function(){
-  // Cached measure layers are reused across calls for speed.
+  try { this.layer.remove(); } catch (e) {}
 };
 
 TextMeasureContext.prototype.measureWidth = function(text){
-  if (!text || !this.layer || !this.textItem) return 0;
-  setMeasureLayerText({ textItem: this.textItem }, text);
-  this.textItem.size = this.size;
+  if (!text) return 0;
+  try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
+  this.layer.visible = true;
+  setTextContentsRTL(this.textItem, text);
   var bounds = layerBoundsPx(this.layer);
   return bounds.width;
 };
@@ -1161,44 +1118,65 @@ function normalizeLinesForAutoFit(text) {
   return cleaned;
 }
 
-function buildMeasureLayerFromLine(doc, fontName, lineText) {
-  if (!doc || !lineText) return null;
-  var entry = ensureMeasureLayer(doc, "autofit_line", fontName, "line");
-  if (!entry) return null;
-  if (fontName) applyFontToTextItem(entry.textItem, fontName);
-  setMeasureLayerText(entry, lineText);
-  return entry;
-}
-
-function buildMeasureLayerFromText(doc, fontName, text) {
-  if (!doc || !text) return null;
-  var entry = ensureMeasureLayer(doc, "autofit_all", fontName, "all");
-  if (!entry) return null;
-  if (fontName) applyFontToTextItem(entry.textItem, fontName);
-  setMeasureLayerText(entry, toStr(text).replace(/\r/g, "\n"));
-  return entry;
-}
-
-function measureLineWidthFromLayer(measureEntry, sizePx) {
-  if (!measureEntry || !measureEntry.layer || !measureEntry.textItem) return 0;
+function buildMeasureLayerFromLine(lyr, lineText) {
+  if (!lyr || !lineText) return null;
   try {
-    measureEntry.textItem.size = sizePx;
-    var bounds = layerBoundsPx(measureEntry.layer);
+    var measureLayer = lyr.duplicate();
+    measureLayer.visible = false;
+    var measureTi = measureLayer.textItem;
+    measureTi.kind = TextType.POINTTEXT;
+    measureTi.contents = forceRTL(lineText);
+    measureTi.justification = Justification.CENTER;
+    measureTi.position = [0, 0];
+    return measureLayer;
+  } catch (e) {
+    return null;
+  }
+}
+
+function buildMeasureLayerFromText(lyr, text) {
+  if (!lyr || !text) return null;
+  try {
+    var measureLayer = lyr.duplicate();
+    measureLayer.visible = false;
+    var measureTi = measureLayer.textItem;
+    measureTi.kind = TextType.POINTTEXT;
+    measureTi.contents = forceRTL(toStr(text).replace(/\r/g, "\n"));
+    measureTi.justification = Justification.CENTER;
+    measureTi.position = [0, 0];
+    return measureLayer;
+  } catch (e) {
+    return null;
+  }
+}
+
+function measureLineWidthFromLayer(measureLayer, sizePx) {
+  if (!measureLayer) return 0;
+  try {
+    var ti = measureLayer.textItem;
+    ti.size = sizePx;
+    var bounds = layerBoundsPx(measureLayer);
     return bounds.width;
   } catch (e) {
     return 0;
   }
 }
 
-function measureTextSizeFromLayer(measureEntry, sizePx) {
-  if (!measureEntry || !measureEntry.layer || !measureEntry.textItem) return null;
+function measureTextSizeFromLayer(measureLayer, sizePx) {
+  if (!measureLayer) return null;
   try {
-    measureEntry.textItem.size = sizePx;
-    var bounds = layerBoundsPx(measureEntry.layer);
+    var ti = measureLayer.textItem;
+    ti.size = sizePx;
+    var bounds = layerBoundsPx(measureLayer);
     return { width: bounds.width, height: bounds.height };
   } catch (e) {
     return null;
   }
+}
+
+function cleanupMeasureLayer(layer) {
+  if (!layer) return;
+  try { layer.remove(); } catch (e) {}
 }
 
 function overflowSlackPx(innerW, innerH) {
@@ -1268,18 +1246,14 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   if (minSize === undefined) minSize = 10;
   if (maxSize === undefined) maxSize = 52;
 
-  var doc = app.activeDocument;
-  var fontName = null;
-  try { fontName = ti.font; } catch (e) {}
-
   var lines = normalizeLinesForAutoFit(rawTextForLines);
   var longestLine = lines.length ? lines[0] : "";
   for (var li = 1; li < lines.length; li++) {
     if (lines[li].length > longestLine.length) longestLine = lines[li];
   }
   var lineCount = Math.max(1, lines.length || 1);
-  var measureLayer = longestLine ? buildMeasureLayerFromLine(doc, fontName, longestLine) : null;
-  var measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(doc, fontName, rawTextForLines) : null;
+  var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
+  var measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(lyr, rawTextForLines) : null;
 
   var slack = overflowSlackPx(innerW, innerH);
 
@@ -1289,7 +1263,7 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   function sizeFits(sizePx) {
     ti.size = sizePx;
     try { ti.leading = Math.max(1, Math.floor(sizePx * 1.12)); } catch (e) {}
-    // Avoid translate on every binary-search step; bounds width/height are position-independent.
+    translateToCenter(lyr, cx, cy);
 
     var b = layerBoundsPx(lyr);
     var w = b.width;
@@ -1340,6 +1314,9 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
 
   sizeFits(best);
 
+  cleanupMeasureLayer(measureLayer);
+  cleanupMeasureLayer(measureAllTextLayer);
+
   var safeHeight = Math.max(innerH, finalHeightEstimate + 20);
   if (ti.height < safeHeight) {
     ti.height = safeHeight;
@@ -1362,15 +1339,44 @@ function ensureFolderExists(folder) {
   return folder;
 }
 
-var __historyContext = null;
-function __processItemsHistory() {
-  if (!__historyContext) return;
-  processItemsInDoc(__historyContext.doc, __historyContext.items, __historyContext.scaleX, __historyContext.scaleY);
-}
+function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
+  // ===== OPEN IMAGE =====
+  if (!imageFile.exists) {
+    alert("❌ Image not found:\n" + imageFile.fsName);
+    throw new Error("Image file not found");
+  }
+  log("Opening image: " + imageFile.fsName);
+  var doc = app.open(imageFile);
 
-function processItemsInDoc(doc, items, scaleX, scaleY) {
-  if (!doc || !items || !items.length) return;
+  // ===== READ JSON =====
+  if (!jsonFile.exists) {
+    alert("❌ JSON not found:\n" + jsonFile.fsName);
+    throw new Error("JSON file not found");
+  }
+  jsonFile.open("r");
+  var jsonText = jsonFile.read();
+  jsonFile.close();
+  jsonText = normalizeZWNJInJsonText(jsonText);
+  log("Loaded JSON: " + jsonFile.fsName);
+  var data = JSON.parse(jsonText);
 
+  // Accept { image_size, items } OR legacy array
+  var items=null, srcW=null, srcH=null;
+  if (data && data.items && data.image_size){
+    items=normalizeItemsZWNJ(data.items); srcW=data.image_size.width; srcH=data.image_size.height;
+  } else if (data instanceof Array){
+    items=normalizeItemsZWNJ(data); srcW=doc.width.as('px'); srcH=doc.height.as('px');
+  } else {
+    throw new Error("JSON must contain { image_size, items } or be an array");
+  }
+
+  // ===== SCALE FACTORS =====
+  var dstW = doc.width.as('px'), dstH = doc.height.as('px');
+  var scaleX = (srcW && srcW>0) ? (dstW/srcW) : 1.0;
+  var scaleY = (srcH && srcH>0) ? (dstH/srcH) : 1.0;
+  log("Scale factors: src=(" + srcW + "x" + srcH + ") dst=(" + dstW + "x" + dstH + ") scaleX=" + scaleX + " scaleY=" + scaleY);
+
+  // ===== PROCESS =====
   for (var i=0; i<items.length; i++){
     var item = items[i];
     if (!item) continue;
@@ -1541,57 +1547,6 @@ function processItemsInDoc(doc, items, scaleX, scaleY) {
       applyStrokeColor(lyr, 3, palette.strokeColor);
     }
   }
-}
-
-function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
-  // ===== OPEN IMAGE =====
-  if (!imageFile.exists) {
-    alert("❌ Image not found:\n" + imageFile.fsName);
-    throw new Error("Image file not found");
-  }
-  log("Opening image: " + imageFile.fsName);
-  var doc = app.open(imageFile);
-
-  // ===== READ JSON =====
-  if (!jsonFile.exists) {
-    alert("❌ JSON not found:\n" + jsonFile.fsName);
-    throw new Error("JSON file not found");
-  }
-  jsonFile.open("r");
-  var jsonText = jsonFile.read();
-  jsonFile.close();
-  jsonText = normalizeZWNJInJsonText(jsonText);
-  log("Loaded JSON: " + jsonFile.fsName);
-  var data = JSON.parse(jsonText);
-
-  // Accept { image_size, items } OR legacy array
-  var items=null, srcW=null, srcH=null;
-  if (data && data.items && data.image_size){
-    items=normalizeItemsZWNJ(data.items); srcW=data.image_size.width; srcH=data.image_size.height;
-  } else if (data instanceof Array){
-    items=normalizeItemsZWNJ(data); srcW=doc.width.as('px'); srcH=doc.height.as('px');
-  } else {
-    throw new Error("JSON must contain { image_size, items } or be an array");
-  }
-
-  // ===== SCALE FACTORS =====
-  var dstW = doc.width.as('px'), dstH = doc.height.as('px');
-  var scaleX = (srcW && srcW>0) ? (dstW/srcW) : 1.0;
-  var scaleY = (srcH && srcH>0) ? (dstH/srcH) : 1.0;
-  log("Scale factors: src=(" + srcW + "x" + srcH + ") dst=(" + dstW + "x" + dstH + ") scaleX=" + scaleX + " scaleY=" + scaleY);
-
-  // ===== PROCESS =====
-  __historyContext = { doc: doc, items: items, scaleX: scaleX, scaleY: scaleY };
-  if (doc && doc.suspendHistory) {
-    try {
-      doc.suspendHistory("Process page text", "__processItemsHistory()"); // reduce history/redraw overhead per page
-    } catch (histErr) {
-      processItemsInDoc(doc, items, scaleX, scaleY);
-    }
-  } else {
-    processItemsInDoc(doc, items, scaleX, scaleY);
-  }
-  __historyContext = null;
 
   // ===== SAVE =====
   var psdSaveOptions = new PhotoshopSaveOptions();
@@ -1687,5 +1642,4 @@ try {
   }
 } finally {
   __restorePrefs();
-  closeLog();
 }
