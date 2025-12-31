@@ -1196,8 +1196,8 @@ function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight, minSize) {
 
   var slack = overflowSlackPx(maxWidth, maxHeight);
   var MAX_ADJUSTMENTS = 8;
+  translateToCenter(lyr, cx, cy);
   for (var i = 0; i < MAX_ADJUSTMENTS; i++) {
-    translateToCenter(lyr, cx, cy);
     var bounds = layerBoundsPx(lyr);
     var overflowW = bounds.width - maxWidth;
     var overflowH = bounds.height - maxHeight;
@@ -1264,7 +1264,6 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   function sizeFits(sizePx) {
     ti.size = sizePx;
     try { ti.leading = Math.max(1, Math.floor(sizePx * 1.12)); } catch (e) {}
-    translateToCenter(lyr, cx, cy);
 
     var b = layerBoundsPx(lyr);
     var w = b.width;
