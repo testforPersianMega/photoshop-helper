@@ -901,28 +901,13 @@ TextMeasureContext.prototype.dispose = function(){
   try { this.layer.remove(); } catch (e) {}
 };
 
-TextMeasureContext.prototype.measureWidth = function(text, sizePx){
+TextMeasureContext.prototype.measureWidth = function(text){
   if (!text) return 0;
   try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
   this.layer.visible = true;
-  if (sizePx !== undefined) {
-    try { this.textItem.size = sizePx; } catch (e) {}
-  }
   setTextContentsRTL(this.textItem, text);
   var bounds = layerBoundsPx(this.layer);
   return bounds.width;
-};
-
-TextMeasureContext.prototype.measureTextSize = function(text, sizePx){
-  if (!text) return { width: 0, height: 0 };
-  try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
-  this.layer.visible = true;
-  if (sizePx !== undefined) {
-    try { this.textItem.size = sizePx; } catch (e) {}
-  }
-  setTextContentsRTL(this.textItem, text);
-  var bounds = layerBoundsPx(this.layer);
-  return { width: bounds.width, height: bounds.height };
 };
 
 TextMeasureContext.prototype.lineHeight = function(){
@@ -1134,6 +1119,67 @@ function normalizeLinesForAutoFit(text) {
   return cleaned;
 }
 
+function buildMeasureLayerFromLine(lyr, lineText) {
+  if (!lyr || !lineText) return null;
+  try {
+    var measureLayer = lyr.duplicate();
+    measureLayer.visible = false;
+    var measureTi = measureLayer.textItem;
+    measureTi.kind = TextType.POINTTEXT;
+    measureTi.contents = forceRTL(lineText);
+    measureTi.justification = Justification.CENTER;
+    measureTi.position = [0, 0];
+    return measureLayer;
+  } catch (e) {
+    return null;
+  }
+}
+
+function buildMeasureLayerFromText(lyr, text) {
+  if (!lyr || !text) return null;
+  try {
+    var measureLayer = lyr.duplicate();
+    measureLayer.visible = false;
+    var measureTi = measureLayer.textItem;
+    measureTi.kind = TextType.POINTTEXT;
+    measureTi.contents = forceRTL(toStr(text).replace(/\r/g, "\n"));
+    measureTi.justification = Justification.CENTER;
+    measureTi.position = [0, 0];
+    return measureLayer;
+  } catch (e) {
+    return null;
+  }
+}
+
+function measureLineWidthFromLayer(measureLayer, sizePx) {
+  if (!measureLayer) return 0;
+  try {
+    var ti = measureLayer.textItem;
+    ti.size = sizePx;
+    var bounds = layerBoundsPx(measureLayer);
+    return bounds.width;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function measureTextSizeFromLayer(measureLayer, sizePx) {
+  if (!measureLayer) return null;
+  try {
+    var ti = measureLayer.textItem;
+    ti.size = sizePx;
+    var bounds = layerBoundsPx(measureLayer);
+    return { width: bounds.width, height: bounds.height };
+  } catch (e) {
+    return null;
+  }
+}
+
+function cleanupMeasureLayer(layer) {
+  if (!layer) return;
+  try { layer.remove(); } catch (e) {}
+}
+
 function overflowSlackPx(innerW, innerH) {
   var slackW = Math.max(2, Math.min(6, Math.round(innerW * 0.03)));
   var slackH = Math.max(2, Math.min(6, Math.round(innerH * 0.03)));
@@ -1197,7 +1243,7 @@ function expandParagraphBoxToContent(lyr, ti, cx, cy, paddingPx) {
   if (changed) translateToCenter(lyr, cx, cy);
 }
 
-function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines, measureCtx) {
+function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines) {
   if (minSize === undefined) minSize = 10;
   if (maxSize === undefined) maxSize = 52;
 
@@ -1206,7 +1252,9 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   for (var li = 1; li < lines.length; li++) {
     if (lines[li].length > longestLine.length) longestLine = lines[li];
   }
-  var useMeasureCtx = measureCtx || null;
+  var lineCount = Math.max(1, lines.length || 1);
+  var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
+  var measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(lyr, rawTextForLines) : null;
 
   var slack = overflowSlackPx(innerW, innerH);
 
@@ -1221,8 +1269,8 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     var w = b.width;
     var h = b.height;
 
-    var measuredLineWidth = (useMeasureCtx && longestLine) ? useMeasureCtx.measureWidth(longestLine, sizePx) : w;
-    var measuredAllSize = (useMeasureCtx && rawTextForLines) ? useMeasureCtx.measureTextSize(rawTextForLines, sizePx) : null;
+    var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, sizePx) : w;
+    var measuredAllSize = measureTextSizeFromLayer(measureAllTextLayer, sizePx);
     var measuredAllWidth = measuredAllSize ? measuredAllSize.width : w;
     var measuredAllHeight = measuredAllSize ? measuredAllSize.height : h;
 
@@ -1232,7 +1280,7 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
 
     log("    test size=" + sizePx +
         " bounds=(" + w.toFixed(1) + "x" + h.toFixed(1) + ")" +
-        (useMeasureCtx ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
+        (measureLayer ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
         (measuredAllSize ? " measureAll=(" + measuredAllWidth.toFixed(1) + "x" + measuredAllHeight.toFixed(1) + ")" : "") +
         " overflow=" + overflow);
 
@@ -1265,6 +1313,9 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   log("  [autoFit] finalSize=" + best + " estHeight=" + finalHeightEstimate);
 
   sizeFits(best);
+
+  cleanupMeasureLayer(measureLayer);
+  cleanupMeasureLayer(measureAllTextLayer);
 
   var safeHeight = Math.max(innerH, finalHeightEstimate + 20);
   if (ti.height < safeHeight) {
@@ -1430,7 +1481,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
     var MIN_SIZE = 12;
     var MAX_SIZE = 60; // cap for binary search auto-fit
-    var fitResult = autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped, ensureLayoutContext());
+    var fitResult = autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
 
     var currentWrapped = wrapped;
 
@@ -1449,7 +1500,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
       translateToCenter(lyr, cx, cy);
       log(reason + " -> refitting in " + ti.width + "x" + ti.height);
-      fitResult = autoFitTextLayer(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE, MAX_SIZE, boostedWrapped, ensureLayoutContext());
+      fitResult = autoFitTextLayer(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE, MAX_SIZE, boostedWrapped);
       currentWrapped = boostedWrapped;
     }
 
