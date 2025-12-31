@@ -1087,6 +1087,73 @@ function setTextContentsRTL(ti, text) {
   ti.contents = forceRTL(text);
 }
 
+// ===== Fast point-text fitting (single-pass scale) =====
+// Creates a POINTTEXT layer, fits it to the target bubble once, and centers it.
+// Requirements:
+// - Uses point text (no paragraph box)
+// - No textItem.width/height
+// - Explicitly sets textItem.kind = TextType.POINTTEXT
+// - Uses manual line breaks (\r) from precomputed lines
+// - Single measurement to compute scale, one font-size set, optional re-measure, single translate
+function createPointTextFastFit(doc, linesArray, fontName, bubbleRect, alignment) {
+  if (!doc) return null;
+
+  var lines = linesArray && linesArray.length ? linesArray : [""];
+  var text = lines.join("\r");
+
+  var lyr = doc.artLayers.add();
+  lyr.kind = LayerKind.TEXT;
+  var ti = lyr.textItem;
+  ti.kind = TextType.POINTTEXT;
+  setTextContentsRTL(ti, text);
+  applyFontToTextItem(ti, fontName);
+
+  var initialSize = 48;
+  ti.size = initialSize;
+  try { ti.leading = Math.max(1, Math.floor(initialSize * 1.18)); } catch (e) {}
+
+  var justification = Justification.CENTER;
+  if (alignment === Justification.LEFT || alignment === Justification.RIGHT || alignment === Justification.CENTER) {
+    justification = alignment;
+  } else if (typeof alignment === "string") {
+    var alignLower = alignment.toLowerCase();
+    if (alignLower === "left") justification = Justification.LEFT;
+    if (alignLower === "right") justification = Justification.RIGHT;
+    if (alignLower === "center") justification = Justification.CENTER;
+  }
+  ti.justification = justification;
+
+  // Use a stable start position; we will center via translate after sizing.
+  ti.position = [bubbleRect.x, bubbleRect.y];
+
+  // Measure once at the initial size.
+  var initialBounds = layerBoundsPx(lyr);
+  var measuredW = Math.max(1, initialBounds.width);
+  var measuredH = Math.max(1, initialBounds.height);
+
+  var scaleW = bubbleRect.width / measuredW;
+  var scaleH = bubbleRect.height / measuredH;
+  var scale = Math.min(scaleW, scaleH) * 0.98;
+  var finalSize = Math.max(1, initialSize * scale);
+
+  // Apply the scaled font size once.
+  ti.size = finalSize;
+  try { ti.leading = Math.max(1, Math.floor(finalSize * 1.18)); } catch (e2) {}
+
+  // Optional re-measure after resizing (no loops).
+  var finalBounds = layerBoundsPx(lyr);
+
+  var targetCx = bubbleRect.x + bubbleRect.width / 2;
+  var targetCy = bubbleRect.y + bubbleRect.height / 2;
+  var currentCx = (finalBounds.left + finalBounds.right) / 2;
+  var currentCy = (finalBounds.top + finalBounds.bottom) / 2;
+
+  // Center the text inside the bubble with a single translate call.
+  lyr.translate(targetCx - currentCx, targetCy - currentCy);
+
+  return lyr;
+}
+
 function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH, textColor){
   var left = cx - innerW/2, top = cy - innerH/2;
   var lyr = doc.artLayers.add();
@@ -1459,84 +1526,19 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       }
     }
 
-    var finalSize = baseSize;
-    log("  startSize(final)=" + finalSize + " font=" + fontName);
+    log("  font=" + fontName);
 
-    var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH, palette.textColor);
-    var ti  = lyr.textItem;
-
-    app.activeDocument.activeLayer = lyr;
-    applyParagraphDirectionRTL(wrapped);
-    trySetMEEveryLineComposer();
-    applyParagraphDirectionRTL();
-
-    ti = lyr.textItem;
-    setTextContentsRTL(ti, wrapped); // reapply after direction/composer to avoid ZWNJ loss
-    applyFontToTextItem(ti, fontName); // restore font if direction/composer reset it
+    var linesArray = wrapped.replace(/\r\n/g, "\r").replace(/\n/g, "\r").split("\r");
+    var bubbleRect = {
+      x: cx - innerW / 2,
+      y: cy - innerH / 2,
+      width: innerW,
+      height: innerH
+    };
+    var lyr = createPointTextFastFit(doc, linesArray, fontName, bubbleRect, "center");
+    var ti = lyr.textItem;
     try { ti.color = palette.textColor; } catch (colorErr) { ti.color = solidBlack(); }
-    ti.justification = Justification.CENTER;
-
-    ti.position = [cx - ti.width/2, cy - ti.height/2];
-    translateToCenter(lyr, cx, cy);
-
-    var MIN_SIZE = 12;
-    var MAX_SIZE = 60; // cap for binary search auto-fit
-    var fitResult = autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
-
-    var currentWrapped = wrapped;
-
-    function boostAndRefit(targetW, targetH, reason) {
-      ti.width = Math.max(ti.width, targetW);
-      ti.height = Math.max(ti.height, targetH);
-
-      var boostedWrapped = currentWrapped;
-      if (!hasManualBreaks) {
-        boostedWrapped = layoutBubble(baseSeedText, doc, fontName, finalSize, ti.width, ti.height, ensureLayoutContext());
-        if (!boostedWrapped) boostedWrapped = currentWrapped;
-        if (boostedWrapped !== currentWrapped) {
-          setTextContentsRTL(ti, boostedWrapped);
-        }
-      }
-
-      translateToCenter(lyr, cx, cy);
-      log(reason + " -> refitting in " + ti.width + "x" + ti.height);
-      fitResult = autoFitTextLayer(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE, MAX_SIZE, boostedWrapped);
-      currentWrapped = boostedWrapped;
-    }
-
-    var shouldBoostBubble = item && item.bbox_bubble && ti.size <= 22;
-    if (shouldBoostBubble) {
-      // Give tiny bubble text a fuller box so the font can climb higher.
-      // Use essentially the whole bubble for reflowing (only keep a 1 px margin)
-      // so short multi-line strings can grow beyond the conservative padding
-      // normally used for larger text.
-      var boostedInnerW = Math.round(Math.max(ti.width, Math.min(bw - 1, bw)));
-      var boostedInnerH = Math.round(Math.max(ti.height, Math.min(bh - 1, bh)));
-      var needsBoost = (boostedInnerW > ti.width) || (boostedInnerH > ti.height);
-
-      if (needsBoost) {
-        boostAndRefit(boostedInnerW, boostedInnerH, "  small text with bubble -> expanding text box to full bubble");
-      }
-    }
-
-    var shouldBoostNoBubble = (!item || !item.bbox_bubble) && ti.size <= 19;
-    if (shouldBoostNoBubble) {
-      var boostedFreeW = Math.round(innerW * 1.5);
-      var boostedFreeH = Math.round(innerH * 1.5);
-      var needsFreeBoost = (boostedFreeW > ti.width + 1) || (boostedFreeH > ti.height + 1);
-
-      if (needsFreeBoost) {
-        boostAndRefit(boostedFreeW, boostedFreeH, "  small text without bubble -> expanding text box x1.5");
-      }
-    }
-
-    // Extra safety: if the text still exceeds the paragraph box (rare but happens with
-    // certain fonts or punctuation), shrink gently until everything is visible.
-    var appliedSize = fitResult && fitResult.size ? fitResult.size : ti.size;
-    var clampMinSize = Math.max(MIN_SIZE, Math.floor(appliedSize * 0.9));
-    clampRenderedTextToBox(lyr, ti, cx, cy, ti.width, ti.height, clampMinSize);
-    expandParagraphBoxToContent(lyr, ti, cx, cy, 6);
-    log("  final applied size=" + ti.size);
+    log("  point-text fitted size=" + ti.size);
 
     var rot = deriveRotationDeg(item);
     if (rot && Math.abs(rot) > 0.001) {
