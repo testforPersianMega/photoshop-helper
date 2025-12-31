@@ -1004,9 +1004,10 @@ function rebalanceMiddleLines(wordsLines, measureCtx, maxWidth, passes) {
   return wordsLines;
 }
 
-function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight) {
+function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx) {
   var widthLimit = Math.max(1, maxWidth || 1);
-  var ctx = new TextMeasureContext(doc, fontName, sizePx);
+  var ownsContext = !sharedCtx;
+  var ctx = sharedCtx || new TextMeasureContext(doc, fontName, sizePx);
   try {
     var words = splitWordsForLayout(text);
     if (!words.length) return [];
@@ -1022,12 +1023,12 @@ function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight) {
     linesWords = rebalanceMiddleLines(linesWords, ctx, widthLimit, 4);
     return linesWords;
   } finally {
-    ctx.dispose();
+    if (ownsContext) ctx.dispose();
   }
 }
 
-function layoutBubble(text, doc, fontName, sizePx, maxWidth, maxHeight) {
-  var linesWords = layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight);
+function layoutBubble(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx) {
+  var linesWords = layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx);
   if (!linesWords.length) return "";
   var parts = [];
   for (var i = 0; i < linesWords.length; i++) {
@@ -1382,6 +1383,11 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     if (!item) continue;
 
     var palette = buildItemPalette(item);
+    var layoutCtx = null;
+    function ensureLayoutContext() {
+      if (!layoutCtx) layoutCtx = new TextMeasureContext(doc, fontName, baseSize);
+      return layoutCtx;
+    }
 
     var raw = toStr(item.text);
     raw = normalizeWSKeepBreaks(raw);
@@ -1434,7 +1440,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       wrappedForced = manualLines.join("\r");
     } else {
       baseSeedText = collapseWhitespace(raw);
-      wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
+      wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH, ensureLayoutContext());
       if (!wrappedForced) wrappedForced = baseSeedText;
     }
 
@@ -1446,7 +1452,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
     if (hasManualBreaks && sizeForced < baseSize * 0.7) {
       log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
-      var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
+      var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH, ensureLayoutContext());
       var sizeFree    = estimateSafeFontSizeForWrapped(wrappedFree, innerW, innerH, baseSize);
       log("  alt reflow size=" + sizeFree);
       if (sizeFree > sizeForced) {
@@ -1486,7 +1492,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
       var boostedWrapped = currentWrapped;
       if (!hasManualBreaks) {
-        boostedWrapped = layoutBubble(baseSeedText, doc, fontName, finalSize, ti.width, ti.height);
+        boostedWrapped = layoutBubble(baseSeedText, doc, fontName, finalSize, ti.width, ti.height, ensureLayoutContext());
         if (!boostedWrapped) boostedWrapped = currentWrapped;
         if (boostedWrapped !== currentWrapped) {
           setTextContentsRTL(ti, boostedWrapped);
@@ -1545,6 +1551,10 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       log('  complex background without bbox -> applying 3px stroke');
       try { doc.activeLayer = lyr; } catch (strokeErr) {}
       applyStrokeColor(lyr, 3, palette.strokeColor);
+    }
+
+    if (layoutCtx) {
+      layoutCtx.dispose();
     }
   }
 
