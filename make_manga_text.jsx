@@ -1151,6 +1151,70 @@ function buildMeasureLayerFromText(lyr, text) {
   }
 }
 
+var __autoFitMeasureCache = null;
+
+function createAutoFitMeasureCache(doc) {
+  return { doc: doc, lineLayer: null, textLayer: null };
+}
+
+function isLayerValid(layer) {
+  if (!layer) return false;
+  try {
+    return !!layer.parent;
+  } catch (e) {
+    return false;
+  }
+}
+
+function syncMeasureTextItemFromSource(targetTi, sourceTi) {
+  if (!targetTi || !sourceTi) return;
+  try { targetTi.size = sourceTi.size; } catch (e) {}
+  try { targetTi.font = sourceTi.font; } catch (e) {}
+  try { targetTi.tracking = sourceTi.tracking; } catch (e) {}
+  try { targetTi.horizontalScale = sourceTi.horizontalScale; } catch (e) {}
+  try { targetTi.verticalScale = sourceTi.verticalScale; } catch (e) {}
+  try { targetTi.fauxBold = sourceTi.fauxBold; } catch (e) {}
+  try { targetTi.fauxItalic = sourceTi.fauxItalic; } catch (e) {}
+  try { targetTi.baselineShift = sourceTi.baselineShift; } catch (e) {}
+  try { targetTi.kerning = sourceTi.kerning; } catch (e) {}
+  try { targetTi.leading = sourceTi.leading; } catch (e) {}
+  try { targetTi.justification = Justification.CENTER; } catch (e) {}
+}
+
+function ensureCachedMeasureLayer(cache, sourceLayer, slotName, contents) {
+  if (!cache || !sourceLayer || cache.doc !== sourceLayer.parent) return null;
+  var layer = cache[slotName];
+  if (!isLayerValid(layer)) {
+    try {
+      layer = sourceLayer.duplicate();
+      layer.name = "__autoFitMeasure_" + slotName;
+      layer.visible = false;
+      var ti = layer.textItem;
+      ti.kind = TextType.POINTTEXT;
+      ti.justification = Justification.CENTER;
+      ti.position = [0, 0];
+      cache[slotName] = layer;
+    } catch (e) {
+      return null;
+    }
+  }
+  try {
+    var targetTi = layer.textItem;
+    targetTi.kind = TextType.POINTTEXT;
+    syncMeasureTextItemFromSource(targetTi, sourceLayer.textItem);
+    setTextContentsRTL(targetTi, contents);
+  } catch (e2) {}
+  return layer;
+}
+
+function disposeAutoFitMeasureCache(cache) {
+  if (!cache) return;
+  try { if (isLayerValid(cache.lineLayer)) cache.lineLayer.remove(); } catch (e) {}
+  try { if (isLayerValid(cache.textLayer)) cache.textLayer.remove(); } catch (e2) {}
+  cache.lineLayer = null;
+  cache.textLayer = null;
+}
+
 function measureLineWidthFromLayer(measureLayer, sizePx) {
   if (!measureLayer) return 0;
   try {
@@ -1243,7 +1307,7 @@ function expandParagraphBoxToContent(lyr, ti, cx, cy, paddingPx) {
   if (changed) translateToCenter(lyr, cx, cy);
 }
 
-function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines) {
+function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines, measureCache) {
   if (minSize === undefined) minSize = 10;
   if (maxSize === undefined) maxSize = 52;
 
@@ -1253,8 +1317,16 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     if (lines[li].length > longestLine.length) longestLine = lines[li];
   }
   var lineCount = Math.max(1, lines.length || 1);
-  var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
-  var measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(lyr, rawTextForLines) : null;
+  var canUseCache = measureCache && measureCache.doc === lyr.parent;
+  var measureLayer = null;
+  var measureAllTextLayer = null;
+  if (canUseCache) {
+    measureLayer = longestLine ? ensureCachedMeasureLayer(measureCache, lyr, "lineLayer", longestLine) : null;
+    measureAllTextLayer = rawTextForLines ? ensureCachedMeasureLayer(measureCache, lyr, "textLayer", rawTextForLines) : null;
+  } else {
+    measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
+    measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(lyr, rawTextForLines) : null;
+  }
 
   var slack = overflowSlackPx(innerW, innerH);
 
@@ -1314,8 +1386,10 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
 
   sizeFits(best);
 
-  cleanupMeasureLayer(measureLayer);
-  cleanupMeasureLayer(measureAllTextLayer);
+  if (!canUseCache) {
+    cleanupMeasureLayer(measureLayer);
+    cleanupMeasureLayer(measureAllTextLayer);
+  }
 
   var safeHeight = Math.max(innerH, finalHeightEstimate + 20);
   if (ti.height < safeHeight) {
@@ -1375,6 +1449,8 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
   var scaleX = (srcW && srcW>0) ? (dstW/srcW) : 1.0;
   var scaleY = (srcH && srcH>0) ? (dstH/srcH) : 1.0;
   log("Scale factors: src=(" + srcW + "x" + srcH + ") dst=(" + dstW + "x" + dstH + ") scaleX=" + scaleX + " scaleY=" + scaleY);
+
+  __autoFitMeasureCache = createAutoFitMeasureCache(doc);
 
   // ===== PROCESS =====
   for (var i=0; i<items.length; i++){
@@ -1481,7 +1557,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
     var MIN_SIZE = 12;
     var MAX_SIZE = 60; // cap for binary search auto-fit
-    var fitResult = autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
+    var fitResult = autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped, __autoFitMeasureCache);
 
     var currentWrapped = wrapped;
 
@@ -1500,7 +1576,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
       translateToCenter(lyr, cx, cy);
       log(reason + " -> refitting in " + ti.width + "x" + ti.height);
-      fitResult = autoFitTextLayer(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE, MAX_SIZE, boostedWrapped);
+      fitResult = autoFitTextLayer(lyr, ti, cx, cy, ti.width, ti.height, MIN_SIZE, MAX_SIZE, boostedWrapped, __autoFitMeasureCache);
       currentWrapped = boostedWrapped;
     }
 
@@ -1556,6 +1632,9 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       layoutCtx.dispose();
     }
   }
+
+  disposeAutoFitMeasureCache(__autoFitMeasureCache);
+  __autoFitMeasureCache = null;
 
   // ===== SAVE =====
   var psdSaveOptions = new PhotoshopSaveOptions();
