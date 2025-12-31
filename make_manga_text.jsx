@@ -207,19 +207,24 @@ function translateToCenter(lyr, cx, cy){
   lyr.translate(cx - c.x, cy - c.y);
 }
 
+function getTextSizeInPoints(ti) {
+  if (!ti || ti.size === undefined || ti.size === null) return null;
+  try {
+    if (typeof ti.size.as === "function") {
+      return ti.size.as("pt");
+    }
+  } catch (e) {}
+  var raw = Number(ti.size);
+  return isFinite(raw) ? raw : null;
+}
+
 function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio, minPointSize, cx, cy) {
   if (!lyr || !ti || !item) return;
   if (!item.bbox_bubble) return;
 
   var threshold = (typeof minPointSize === "number") ? minPointSize : 18;
-  var currentSize = null;
-  try {
-    if (ti.size && typeof ti.size.as === "function") {
-      currentSize = ti.size.as("pt");
-    }
-  } catch (e) {}
-  if (currentSize === null) currentSize = Number(ti.size);
-  if (!isFinite(currentSize)) return;
+  var currentSize = getTextSizeInPoints(ti);
+  if (currentSize === null) return;
   if (currentSize >= threshold) return;
 
   var bubbleBox = normalizeBox(item.bbox_bubble);
