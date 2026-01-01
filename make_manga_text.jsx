@@ -242,6 +242,18 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
 
   ti.size = newSize;
   try { ti.leading = Math.max(1, Math.floor(newSize * 1.12)); } catch (e) {}
+
+  var resizedBounds = layerBoundsPx(lyr);
+  if (resizedBounds && resizedBounds.width > 0 && resizedBounds.height > 0) {
+    var fitScaleW = targetW / resizedBounds.width;
+    var fitScaleH = targetH / resizedBounds.height;
+    var fitScale = Math.min(fitScaleW, fitScaleH);
+    if (fitScale < 1) {
+      var fitSize = Math.max(1, ti.size * fitScale);
+      ti.size = fitSize;
+      try { ti.leading = Math.max(1, Math.floor(fitSize * 1.12)); } catch (e2) {}
+    }
+  }
   translateToCenter(lyr, cx, cy);
 }
 
