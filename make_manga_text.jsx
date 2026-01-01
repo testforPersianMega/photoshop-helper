@@ -207,13 +207,13 @@ function translateToCenter(lyr, cx, cy){
   lyr.translate(cx - c.x, cy - c.y);
 }
 
-function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio, minPointSize, maxPointSize, cx, cy) {
+function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio, minPointSize, cx, cy) {
   if (!lyr || !ti || !item) return;
   if (!item.bbox_bubble) return;
 
   var threshold = (typeof minPointSize === "number") ? minPointSize : 18;
   if (ti.size >= threshold) return;
-  var maxSize = (typeof maxPointSize === "number") ? maxPointSize : 22;
+
   var bubbleBox = normalizeBox(item.bbox_bubble);
   if (!bubbleBox) return;
 
@@ -229,33 +229,9 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
   var scaleW = targetW / bounds.width;
   var scaleH = targetH / bounds.height;
   var scale = Math.min(scaleW, scaleH);
-  if (maxSize && maxSize > 0) {
-    var maxScale = maxSize / ti.size;
-    if (maxScale <= 1) return;
-    if (scale > maxScale) scale = maxScale;
-  }
   if (scale <= 1) return;
 
-  var newSize = ti.size * scale;
-  if (newSize <= ti.size) return;
-  if (maxSize && maxSize > 0) {
-    newSize = Math.min(newSize, maxSize);
-  }
-
-  ti.size = newSize;
-  try { ti.leading = Math.max(1, Math.floor(newSize * 1.12)); } catch (e) {}
-
-  var resizedBounds = layerBoundsPx(lyr);
-  if (resizedBounds && resizedBounds.width > 0 && resizedBounds.height > 0) {
-    var fitScaleW = targetW / resizedBounds.width;
-    var fitScaleH = targetH / resizedBounds.height;
-    var fitScale = Math.min(fitScaleW, fitScaleH);
-    if (fitScale < 1) {
-      var fitSize = Math.max(1, ti.size * fitScale);
-      ti.size = fitSize;
-      try { ti.leading = Math.max(1, Math.floor(fitSize * 1.12)); } catch (e2) {}
-    }
-  }
+  lyr.resize(scale * 100, scale * 100, AnchorPosition.MIDDLECENTER);
   translateToCenter(lyr, cx, cy);
 }
 
@@ -1598,7 +1574,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       lyr.rotate(rot, AnchorPosition.MIDDLECENTER);
     }
     translateToCenter(lyr, cx, cy);
-    scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, 0.9, 18, 22, cx, cy);
+    scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, 0.9, 18, cx, cy);
 
     var needsStroke = item && !item.bbox_bubble && item.complex_background === true;
     if (needsStroke) {
