@@ -213,6 +213,7 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
 
   var threshold = (typeof minPointSize === "number") ? minPointSize : 18;
   if (ti.size >= threshold) return;
+  var maxSize = (typeof maxPointSize === "number") ? maxPointSize : 22;
 
   var maxSize = (typeof maxPointSize === "number") ? maxPointSize : null;
   var bubbleBox = normalizeBox(item.bbox_bubble);
@@ -239,6 +240,10 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
   if (maxSize && maxSize > 0) {
     newSize = Math.min(newSize, maxSize);
   }
+  var maxScale = maxSize / ti.size;
+  if (maxScale <= 1) return;
+  if (scale > maxScale) scale = maxScale;
+  if (scale <= 1) return;
 
   ti.size = newSize;
   try { ti.leading = Math.max(1, Math.floor(newSize * 1.12)); } catch (e) {}
