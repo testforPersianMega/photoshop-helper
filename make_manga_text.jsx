@@ -25,6 +25,13 @@ var outputPSD   = File(scriptFolder + "/manga_output.psd");
 var outputJPG   = File(scriptFolder + "/manga_output.jpg");
 var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of the PSD
 
+// Optional: point to a local Bot API file store to bypass Telegram's 20MB limit.
+// Example (Windows): set LOCAL_API_BASE=C:/telegram-bot-api/files
+// If imageFile/jsonFile are Telegram file URLs, they will be mapped to this local folder.
+var LOCAL_API_BASE = (function () {
+  try { return $.getenv("LOCAL_API_BASE"); } catch (e) { return ""; }
+})();
+
 // Optional batch mode: process an entire chapter
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
@@ -68,6 +75,9 @@ function log(msg){
   }
 }
 initLog();
+if (LOCAL_API_BASE) {
+  log("LOCAL_API_BASE enabled: " + LOCAL_API_BASE);
+}
 
 // ===== JSON (legacy-safe) =====
 if (typeof JSON === 'undefined') { JSON = {}; JSON.parse = function (s) { return eval('(' + s + ')'); }; }
@@ -89,6 +99,50 @@ function safeTrim(s){
       .replace(/^[ \t\u00A0\r\n]+/, "")
       .replace(/[ \t\u00A0\r\n]+$/, "");
   });
+}
+
+// ===== LOCAL_API_BASE helpers =====
+function normalizeLocalPath(p) {
+  var s = toStr(p);
+  if (!s) return "";
+  s = s.replace(/\\/g, "/");
+  s = s.replace(/\/+$/, "");
+  return s;
+}
+function joinPath(base, rel) {
+  var b = normalizeLocalPath(base);
+  var r = toStr(rel).replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!b) return r;
+  if (!r) return b;
+  return b + "/" + r;
+}
+function isUrl(s) {
+  return /^https?:\/\//i.test(toStr(s));
+}
+function stripTelegramFilePrefix(path) {
+  return toStr(path).replace(/^https?:\/\/[^\/]+\/file\/bot[^\/]+\/?/i, "");
+}
+function resolveFileFromInput(input, label) {
+  if (!input) return null;
+  if (input.typename && input.typename === "File") return input;
+
+  var raw = toStr(input);
+  var candidate = raw;
+
+  if (LOCAL_API_BASE) {
+    var stripped = stripTelegramFilePrefix(candidate);
+    if (stripped !== candidate) {
+      candidate = joinPath(LOCAL_API_BASE, stripped);
+    } else if (/^file\/bot[^\/]+\/?/i.test(candidate)) {
+      candidate = joinPath(LOCAL_API_BASE, candidate.replace(/^file\/bot[^\/]+\/?/i, ""));
+    }
+  }
+
+  if (isUrl(candidate)) {
+    log("❌ " + label + " is a URL. Set LOCAL_API_BASE to a local file path or pre-download the file.");
+  }
+
+  return File(candidate);
 }
 // Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
 // Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
@@ -1445,24 +1499,27 @@ function ensureFolderExists(folder) {
 }
 
 function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
+  var resolvedImage = resolveFileFromInput(imageFile, "Image file");
+  var resolvedJson = resolveFileFromInput(jsonFile, "JSON file");
+
   // ===== OPEN IMAGE =====
-  if (!imageFile.exists) {
-    alert("❌ Image not found:\n" + imageFile.fsName);
+  if (!resolvedImage || !resolvedImage.exists) {
+    alert("❌ Image not found:\n" + (resolvedImage ? resolvedImage.fsName : toStr(imageFile)));
     throw new Error("Image file not found");
   }
-  log("Opening image: " + imageFile.fsName);
-  var doc = app.open(imageFile);
+  log("Opening image: " + resolvedImage.fsName);
+  var doc = app.open(resolvedImage);
 
   // ===== READ JSON =====
-  if (!jsonFile.exists) {
-    alert("❌ JSON not found:\n" + jsonFile.fsName);
+  if (!resolvedJson || !resolvedJson.exists) {
+    alert("❌ JSON not found:\n" + (resolvedJson ? resolvedJson.fsName : toStr(jsonFile)));
     throw new Error("JSON file not found");
   }
-  jsonFile.open("r");
-  var jsonText = jsonFile.read();
-  jsonFile.close();
+  resolvedJson.open("r");
+  var jsonText = resolvedJson.read();
+  resolvedJson.close();
   jsonText = normalizeZWNJInJsonText(jsonText);
-  log("Loaded JSON: " + jsonFile.fsName);
+  log("Loaded JSON: " + resolvedJson.fsName);
   var data = JSON.parse(jsonText);
 
   // Accept { image_size, items } OR legacy array
