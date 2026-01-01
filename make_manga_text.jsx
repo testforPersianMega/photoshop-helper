@@ -207,12 +207,13 @@ function translateToCenter(lyr, cx, cy){
   lyr.translate(cx - c.x, cy - c.y);
 }
 
-function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio, minPointSize, cx, cy) {
+function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio, minPointSize, maxPointSize, cx, cy) {
   if (!lyr || !ti || !item) return;
   if (!item.bbox_bubble) return;
 
   var threshold = (typeof minPointSize === "number") ? minPointSize : 18;
   if (ti.size >= threshold) return;
+  var maxSize = (typeof maxPointSize === "number") ? maxPointSize : 22;
 
   var bubbleBox = normalizeBox(item.bbox_bubble);
   if (!bubbleBox) return;
@@ -229,6 +230,9 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
   var scaleW = targetW / bounds.width;
   var scaleH = targetH / bounds.height;
   var scale = Math.min(scaleW, scaleH);
+  var maxScale = maxSize / ti.size;
+  if (maxScale <= 1) return;
+  if (scale > maxScale) scale = maxScale;
   if (scale <= 1) return;
 
   lyr.resize(scale * 100, scale * 100, AnchorPosition.MIDDLECENTER);
@@ -1574,7 +1578,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       lyr.rotate(rot, AnchorPosition.MIDDLECENTER);
     }
     translateToCenter(lyr, cx, cy);
-    scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, 0.9, 18, cx, cy);
+    scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, 0.9, 18, 22, cx, cy);
 
     var needsStroke = item && !item.bbox_bubble && item.complex_background === true;
     if (needsStroke) {
