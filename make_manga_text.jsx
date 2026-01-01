@@ -211,8 +211,12 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
   if (!lyr || !ti || !item) return;
   if (!item.bbox_bubble) return;
 
-  var threshold = (typeof minPointSize === "number") ? minPointSize : 18;
-  if (ti.size >= threshold) return;
+  var minSize = (typeof minPointSize === "number") ? minPointSize : 18;
+  var currentSize = Number(ti.size);
+  if (isFinite(currentSize) && currentSize >= minSize) return;
+
+  var baselineSize = 22;
+  try { ti.size = baselineSize; } catch (sizeErr) {}
 
   var bubbleBox = normalizeBox(item.bbox_bubble);
   if (!bubbleBox) return;
@@ -229,7 +233,7 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
   var scaleW = targetW / bounds.width;
   var scaleH = targetH / bounds.height;
   var scale = Math.min(scaleW, scaleH);
-  if (scale <= 1) return;
+  if (!isFinite(scale) || scale >= 1) return;
 
   lyr.resize(scale * 100, scale * 100, AnchorPosition.MIDDLECENTER);
   translateToCenter(lyr, cx, cy);
