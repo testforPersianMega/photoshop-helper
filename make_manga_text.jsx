@@ -211,12 +211,12 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
   if (!lyr || !ti || !item) return;
   if (!item.bbox_bubble) return;
 
-    var minSize = (typeof minPointSize === "number") ? minPointSize : 18;
+  var minSize = (typeof minPointSize === "number") ? minPointSize : 18;
   var currentSize = Number(ti.size);
-  if (isFinite(currentSize) && currentSize >= minSize) return;
+  if (!isFinite(currentSize) || currentSize <= 0) return;
+  if (currentSize >= minSize) return;
 
   var baselineSize = 22;
-  try { ti.size = baselineSize; } catch (sizeErr) {}
 
   var bubbleBox = normalizeBox(item.bbox_bubble);
   if (!bubbleBox) return;
@@ -232,9 +232,15 @@ function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio,
 
   var scaleW = targetW / bounds.width;
   var scaleH = targetH / bounds.height;
-  var scale = Math.min(scaleW, scaleH);
-  if (!isFinite(scale) || scale >= 1) return;
+  var scaleToFit = Math.min(scaleW, scaleH);
+  if (!isFinite(scaleToFit) || scaleToFit <= 0) return;
 
+  var maxScaleByPoint = baselineSize / currentSize;
+  var scale = Math.min(scaleToFit, maxScaleByPoint);
+  if (!isFinite(scale) || scale <= 0 || scale === 1) return;
+
+  log('  scaling small text layer "' + lyr.name + '" from ' + currentSize + 'pt by ' + scale.toFixed(3) +
+      ' (max 22pt, target ratio ' + ratio + ')');
   lyr.resize(scale * 100, scale * 100, AnchorPosition.MIDDLECENTER);
   translateToCenter(lyr, cx, cy);
 }
