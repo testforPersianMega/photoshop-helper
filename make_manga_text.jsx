@@ -526,7 +526,22 @@ function textToBubbleAreaRatio(item) {
   return textArea / bubbleArea;
 }
 
-function collectRemovalSegments(item){
+function textToBubbleSizeRatios(item) {
+  if (!item || !item.bbox_text || !item.bbox_bubble) return null;
+  var textBox = normalizeBox(item.bbox_text);
+  var bubbleBox = normalizeBox(item.bbox_bubble);
+  if (!textBox || !bubbleBox) return null;
+  var textW = Math.max(0, textBox.right - textBox.left);
+  var textH = Math.max(0, textBox.bottom - textBox.top);
+  var bubbleW = Math.max(0, bubbleBox.right - bubbleBox.left);
+  var bubbleH = Math.max(0, bubbleBox.bottom - bubbleBox.top);
+  if (!textW || !textH || !bubbleW || !bubbleH) return null;
+  return { width: textW / bubbleW, height: textH / bubbleH };
+}
+
+function collectRemovalSegments(item, options){
+  var opts = options || {};
+  var ignoreBboxText = !!opts.ignoreBboxText;
   var result = { segments: [], source: "none" };
   if (!item) return result;
   if (item.segments && item.segments.length) {
@@ -542,7 +557,7 @@ function collectRemovalSegments(item){
   if (item.polygon_text && item.polygon_text.length >= 3) {
     box = polygonToBox(item.polygon_text);
     result.source = "polygon_text";
-  } else if (item.bbox_text) {
+  } else if (item.bbox_text && !ignoreBboxText) {
     box = item.bbox_text;
     result.source = "bbox_text";
   } else if (item.bbox_bubble) {
@@ -562,16 +577,22 @@ function collectRemovalSegments(item){
 
 function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
   var ratio = textToBubbleAreaRatio(item);
+  var sizeRatio = textToBubbleSizeRatios(item);
+  var bboxTooLarge = sizeRatio && (sizeRatio.width > 0.8 || sizeRatio.height > 0.8);
   var segmentsInfo = null;
-  if (ratio !== null && ratio < 0.5) {
+  if (bboxTooLarge) {
+    log('  bbox_text too large vs bbox_bubble (' +
+        Math.round(sizeRatio.width * 100) + '% x ' +
+        Math.round(sizeRatio.height * 100) + '%) -> ignore bbox_text');
+  } else if (ratio !== null && ratio < 0.5) {
     var bboxSegment = boxToSegment(item.bbox_text, 2);
     if (bboxSegment) {
       segmentsInfo = { segments: [bboxSegment], source: "bbox_text_ratio" };
-      log('  [Bbox_text replaced with Segments]bbox_text/bbox_bubble area ratio ' + Math.round(ratio * 100) + '% < 50% -> using bbox_text for removal');
+      log('  [Bbox_text replaced with Segments] bbox_text/bbox_bubble area ratio ' + Math.round(ratio * 100) + '% < 50% -> using bbox_text for removal');
     }
   }
   if (!segmentsInfo) {
-    segmentsInfo = collectRemovalSegments(item);
+    segmentsInfo = collectRemovalSegments(item, { ignoreBboxText: bboxTooLarge });
   }
   if (!segmentsInfo.segments.length) {
     log('  ⚠️ no segments available for content-aware fill');
