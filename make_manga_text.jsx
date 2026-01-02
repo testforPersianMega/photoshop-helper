@@ -29,15 +29,15 @@ var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of th
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
-var PROCESS_WHOLE_CHAPTER = true;
+var PROCESS_WHOLE_CHAPTER = false;
 var chapterImagesFolder  = Folder(scriptFolder + "/wild/raw 48");
 var chapterJsonFolder    = Folder(scriptFolder + "/wild/json final");
 var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
 
 // ===== DEBUG + FILE LOGGING =====
-var DEBUG = false;
-var LOG_TO_FILE = false;
-var DEBUG_CONTENT_AWARE = false; // highlight removal selections for debugging
+var DEBUG = true;
+var LOG_TO_FILE = true;
+var DEBUG_CONTENT_AWARE = true; // highlight removal selections for debugging
 var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
 
@@ -563,11 +563,11 @@ function collectRemovalSegments(item){
 function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
   var ratio = textToBubbleAreaRatio(item);
   var segmentsInfo = null;
-  if (ratio !== null && ratio < 0.6) {
+  if (ratio !== null && ratio < 0.5) {
     var bboxSegment = boxToSegment(item.bbox_text, 2);
     if (bboxSegment) {
       segmentsInfo = { segments: [bboxSegment], source: "bbox_text_ratio" };
-      log('  bbox_text/bbox_bubble area ratio ' + Math.round(ratio * 100) + '% < 60% -> using bbox_text for removal');
+      log('  [Bbox_text replaced with Segments]bbox_text/bbox_bubble area ratio ' + Math.round(ratio * 100) + '% < 50% -> using bbox_text for removal');
     }
   }
   if (!segmentsInfo) {
