@@ -29,15 +29,15 @@ var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of th
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
-var PROCESS_WHOLE_CHAPTER = true;
+var PROCESS_WHOLE_CHAPTER = false;
 var chapterImagesFolder  = Folder(scriptFolder + "/wild/raw 48");
 var chapterJsonFolder    = Folder(scriptFolder + "/wild/json final");
 var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
 
 // ===== DEBUG + FILE LOGGING =====
-var DEBUG = false;
-var LOG_TO_FILE = false;
-var DEBUG_CONTENT_AWARE = false; // highlight removal selections for debugging
+var DEBUG = true;
+var LOG_TO_FILE = true;
+var DEBUG_CONTENT_AWARE = true; // highlight removal selections for debugging
 var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
 
