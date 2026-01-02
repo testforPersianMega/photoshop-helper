@@ -29,15 +29,15 @@ var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of th
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
-var PROCESS_WHOLE_CHAPTER = false;
-var chapterImagesFolder  = Folder(scriptFolder + "/wild/raw 48");
-var chapterJsonFolder    = Folder(scriptFolder + "/wild/json final");
-var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
+var PROCESS_WHOLE_CHAPTER = true;
+var chapterImagesFolder  = Folder("C:/Users/abbas/Desktop/wild/chaps/49");
+var chapterJsonFolder    = Folder("C:/Users/abbas/Desktop/wild/chaps/49-json-final");
+var chapterOutputFolder  = Folder("C:/Users/abbas/Desktop/wild/chaps/49_output");
 
 // ===== DEBUG + FILE LOGGING =====
 var DEBUG = true;
 var LOG_TO_FILE = true;
-var DEBUG_CONTENT_AWARE = true; // highlight removal selections for debugging
+var DEBUG_CONTENT_AWARE = false; // highlight removal selections for debugging
 var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
 
@@ -578,7 +578,7 @@ function collectRemovalSegments(item, options){
 function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
   var ratio = textToBubbleAreaRatio(item);
   var sizeRatio = textToBubbleSizeRatios(item);
-  var bboxTooLarge = sizeRatio && (sizeRatio.width > 0.8 || sizeRatio.height > 0.8);
+  var bboxTooLarge = sizeRatio && (sizeRatio.width > 0.73 || sizeRatio.height > 0.7);
   var segmentsInfo = null;
   if (bboxTooLarge) {
     log('  bbox_text too large vs bbox_bubble (' +
