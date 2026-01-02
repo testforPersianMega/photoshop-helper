@@ -510,6 +510,22 @@ function normalizeBox(box) {
   return null;
 }
 
+function boxArea(box) {
+  var norm = normalizeBox(box);
+  if (!norm) return 0;
+  var w = Math.max(0, norm.right - norm.left);
+  var h = Math.max(0, norm.bottom - norm.top);
+  return w * h;
+}
+
+function textToBubbleAreaRatio(item) {
+  if (!item || !item.bbox_text || !item.bbox_bubble) return null;
+  var textArea = boxArea(item.bbox_text);
+  var bubbleArea = boxArea(item.bbox_bubble);
+  if (!textArea || !bubbleArea) return null;
+  return textArea / bubbleArea;
+}
+
 function collectRemovalSegments(item){
   var result = { segments: [], source: "none" };
   if (!item) return result;
@@ -545,7 +561,18 @@ function collectRemovalSegments(item){
 }
 
 function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
-  var segmentsInfo = collectRemovalSegments(item);
+  var ratio = textToBubbleAreaRatio(item);
+  var segmentsInfo = null;
+  if (ratio !== null && ratio < 0.6) {
+    var bboxSegment = boxToSegment(item.bbox_text, 2);
+    if (bboxSegment) {
+      segmentsInfo = { segments: [bboxSegment], source: "bbox_text_ratio" };
+      log('  bbox_text/bbox_bubble area ratio ' + Math.round(ratio * 100) + '% < 60% -> using bbox_text for removal');
+    }
+  }
+  if (!segmentsInfo) {
+    segmentsInfo = collectRemovalSegments(item);
+  }
   if (!segmentsInfo.segments.length) {
     log('  ⚠️ no segments available for content-aware fill');
     return;
