@@ -510,6 +510,15 @@ function normalizeBox(box) {
   return null;
 }
 
+function boxArea(box) {
+  var norm = normalizeBox(box);
+  if (!norm) return null;
+  var width = norm.right - norm.left;
+  var height = norm.bottom - norm.top;
+  if (width <= 0 || height <= 0) return null;
+  return width * height;
+}
+
 function collectRemovalSegments(item){
   var result = { segments: [], source: "none" };
   if (!item) return result;
@@ -522,8 +531,20 @@ function collectRemovalSegments(item){
   var derived = [];
   var pad = 2;
   var box = null;
+  var preferBBoxText = false;
 
-  if (item.polygon_text && item.polygon_text.length >= 3) {
+  if (item.bbox_bubble && item.bbox_text) {
+    var bubbleArea = boxArea(item.bbox_bubble);
+    var textArea = boxArea(item.bbox_text);
+    if (bubbleArea && textArea) {
+      preferBBoxText = (textArea / bubbleArea) < 0.6;
+    }
+  }
+
+  if (preferBBoxText) {
+    box = item.bbox_text;
+    result.source = "bbox_text";
+  } else if (item.polygon_text && item.polygon_text.length >= 3) {
     box = polygonToBox(item.polygon_text);
     result.source = "polygon_text";
   } else if (item.bbox_text) {
