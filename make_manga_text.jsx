@@ -178,7 +178,8 @@ function normalizeItemsZWNJ(items) {
 function solidBlack(){ var c=new SolidColor(); c.rgb.red=0;c.rgb.green=0;c.rgb.blue=0; return c; }
 function solidWhite(){ var c=new SolidColor(); c.rgb.red=255;c.rgb.green=255;c.rgb.blue=255; return c; }
 function buildItemPalette(item) {
-  var reversed = !!(item && item.reverse_color === true);
+  var hasBubbleBox = !!(item && item.bbox_bubble);
+  var reversed = hasBubbleBox && item && item.reverse_color === true;
   return {
     textColor: reversed ? solidWhite() : solidBlack(),
     strokeColor: reversed ? solidBlack() : solidWhite(),
@@ -610,7 +611,8 @@ function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
   }
   doc.activeLayer = cleanupLayer;
   try { doc.selection.deselect(); } catch (e) {}
-  var useContentAware = !(item && item.complex_background === false);
+  var hasBubbleBox = !!(item && item.bbox_bubble);
+  var useContentAware = !hasBubbleBox;
   if (segmentsInfo.source !== 'json') {
     log('  deriving removal segments from ' + segmentsInfo.source);
   }
@@ -628,7 +630,7 @@ function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
     }
   } else {
     var fillColor = (palette && palette.simpleBgColor) ? palette.simpleBgColor : solidBlack();
-    log('  simple background -> filling selection with color over ' + segmentsInfo.segments.length + ' segments');
+    log('  bbox_bubble detected -> filling selection with color over ' + segmentsInfo.segments.length + ' segments');
     try {
       doc.selection.fill(fillColor);
     } catch (fillErr) {
@@ -1634,7 +1636,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     translateToCenter(lyr, cx, cy);
     scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, 0.9, 22, cx, cy);
 
-    var needsStroke = item && !item.bbox_bubble && item.complex_background === true;
+    var needsStroke = item && !item.bbox_bubble;
     if (needsStroke) {
       log('  complex background without bbox -> applying 3px stroke');
       try { doc.activeLayer = lyr; } catch (strokeErr) {}
