@@ -519,6 +519,14 @@ function boxArea(box) {
   return width * height;
 }
 
+function shouldPreferBBoxText(item) {
+  if (!item || !item.bbox_bubble || !item.bbox_text) return false;
+  var bubbleArea = boxArea(item.bbox_bubble);
+  var textArea = boxArea(item.bbox_text);
+  if (!bubbleArea || !textArea) return false;
+  return (textArea / bubbleArea) < 0.6;
+}
+
 function collectRemovalSegments(item){
   var result = { segments: [], source: "none" };
   if (!item) return result;
@@ -531,15 +539,7 @@ function collectRemovalSegments(item){
   var derived = [];
   var pad = 2;
   var box = null;
-  var preferBBoxText = false;
-
-  if (item.bbox_bubble && item.bbox_text) {
-    var bubbleArea = boxArea(item.bbox_bubble);
-    var textArea = boxArea(item.bbox_text);
-    if (bubbleArea && textArea) {
-      preferBBoxText = (textArea / bubbleArea) < 0.6;
-    }
-  }
+  var preferBBoxText = shouldPreferBBoxText(item);
 
   if (preferBBoxText) {
     box = item.bbox_text;
@@ -633,6 +633,10 @@ function polygonCentroid(points){
   return { x: Cx/(6*A), y: Cy/(6*A) };
 }
 function deriveCenter(item){
+  if (item && shouldPreferBBoxText(item) && item.bbox_text){
+    var bt = normalizeBox(item.bbox_text);
+    if (bt) return { x:(bt.left+bt.right)/2, y:(bt.top+bt.bottom)/2 };
+  }
   if (item && item.polygon_text && item.polygon_text.length>=3){
     var c = polygonCentroid(item.polygon_text); if (c) return c;
   }
