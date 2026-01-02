@@ -716,7 +716,7 @@ var FONT_ALIASES = {
     "B Koodak(Farsi)"
   ],
   "B Morvarid": ["B Morvarid-Regular", "B Morvarid Regular"],
-  "AFSANEH": ["AFSANEH-Regular", "AFSANEH Regular"],
+  "AFSANEH": ["AFSANEH","AFSANEH-Regular", "AFSANEH Regular"],
   "Potk": ["Potk-Black"],
   "Kalameh": ["Kalameh-Regular"],
   "A nic Regular": ["A nic", "A-nic", "A-nic-Regular"],
@@ -877,7 +877,7 @@ function getFontForType(type){
   switch(type){
     case "Standard": requested = "IRKoodak"; break;
     case "Thought":         requested = "B Morvarid"; break;
-    case "Shouting/Emotion":requested = "AFSANEH"; break;
+    case "Shouting":requested = "AFSANEH"; break;
     case "Whisper/Soft":    requested = "A nic Regular"; break;
     case "Electronic":      requested = "Consolas"; break;
     case "Narration":   requested = "IRFarnaz"; break;
