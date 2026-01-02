@@ -29,15 +29,15 @@ var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of th
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
-var PROCESS_WHOLE_CHAPTER = false;
+var PROCESS_WHOLE_CHAPTER = true;
 var chapterImagesFolder  = Folder(scriptFolder + "/wild/raw 48");
 var chapterJsonFolder    = Folder(scriptFolder + "/wild/json final");
 var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
 
 // ===== DEBUG + FILE LOGGING =====
-var DEBUG = true;
-var LOG_TO_FILE = true;
-var DEBUG_CONTENT_AWARE = true; // highlight removal selections for debugging
+var DEBUG = false;
+var LOG_TO_FILE = false;
+var DEBUG_CONTENT_AWARE = false; // highlight removal selections for debugging
 var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
 
@@ -510,23 +510,6 @@ function normalizeBox(box) {
   return null;
 }
 
-function boxArea(box) {
-  var norm = normalizeBox(box);
-  if (!norm) return null;
-  var width = norm.right - norm.left;
-  var height = norm.bottom - norm.top;
-  if (width <= 0 || height <= 0) return null;
-  return width * height;
-}
-
-function shouldPreferBBoxText(item) {
-  if (!item || !item.bbox_bubble || !item.bbox_text) return false;
-  var bubbleArea = boxArea(item.bbox_bubble);
-  var textArea = boxArea(item.bbox_text);
-  if (!bubbleArea || !textArea) return false;
-  return (textArea / bubbleArea) < 0.6;
-}
-
 function collectRemovalSegments(item){
   var result = { segments: [], source: "none" };
   if (!item) return result;
@@ -539,12 +522,8 @@ function collectRemovalSegments(item){
   var derived = [];
   var pad = 2;
   var box = null;
-  var preferBBoxText = shouldPreferBBoxText(item);
 
-  if (preferBBoxText) {
-    box = item.bbox_text;
-    result.source = "bbox_text";
-  } else if (item.polygon_text && item.polygon_text.length >= 3) {
+  if (item.polygon_text && item.polygon_text.length >= 3) {
     box = polygonToBox(item.polygon_text);
     result.source = "polygon_text";
   } else if (item.bbox_text) {
@@ -633,10 +612,6 @@ function polygonCentroid(points){
   return { x: Cx/(6*A), y: Cy/(6*A) };
 }
 function deriveCenter(item){
-  if (item && shouldPreferBBoxText(item) && item.bbox_text){
-    var bt = normalizeBox(item.bbox_text);
-    if (bt) return { x:(bt.left+bt.right)/2, y:(bt.top+bt.bottom)/2 };
-  }
   if (item && item.polygon_text && item.polygon_text.length>=3){
     var c = polygonCentroid(item.polygon_text); if (c) return c;
   }
