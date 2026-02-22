@@ -690,279 +690,43 @@ function deriveBox(item){
   return null;
 }
 
-// ===== Fonts & RTL helpers =====
-var FONT_ALIASES = {
-  "IRANSans Black": [
-    "IRANSans-Black",
-    "IRANSansBlack",
-    "IRANSans",
-    "IRANSansWeb-Black",
-    "IRANSansWeb(FaNum)",
-    "IRANSans(FaNum)",
-    "IRANSans(Farsi)",
-    "IranSans-Black",
-    "IranSans Black"
-  ],
-  "IRKoodak": [
-    "IRKoodak-Regular",
-    "IR Koodak",
-    "IR Koodak Bold",
-    "IRKoodak Bold",
-    "IRKoodakBold",
-    "IRKoodak(Bold)",
-    "B Koodak",
-    "BKoodak",
-    "B Koodak Bold",
-    "B Koodak(Farsi)"
-  ],
-  "B Morvarid": ["B Morvarid-Regular", "B Morvarid Regular"],
-  "AFSANEH": ["AFSANEH","AFSANEH-Regular", "AFSANEH Regular"],
-  "Potk": ["Potk-Black"],
-  "Kalameh": ["Kalameh-Regular"],
-  "Mikhak": ["Mikhak-DS1-Regular","Mikhak-Regular", "Mikhak", "Mikhak-DS1"],
-  "IRHoma": ["IRHoma","IRHoma-Regular"],
-  "IRElham": ["IRElham","IRElham-Regular"],
-  "A nic Regular": ["A nic", "A-nic", "A-nic-Regular"],
-  "IRFarnaz": [
-    "IRFarnaz",
-    "IRFarnaz-Regular",
-    "IRFarnaz Regular",
-    "IR Farnaz",
-    "IRFarnaz(Farsi)",
-    "IRFarnaz Farsi",
-    "B Farnaz",
-    "BFarnaz",
-    "Farnaz(Farsi)"
-  ],
-  "Shabnam-BoldItalic": ["Shabnam Bold Italic", "Shabnam BoldItalic", "ShabnamBI"]
+// ===== Font actions helpers =====
+var FONT_ACTION_SET = "Default Actions";
+
+// Update these action names to match your Photoshop Actions panel.
+// Each action should set the desired font + RTL settings together.
+var FONT_ACTIONS = {
+  "Standard": "Add Mikhak RTL",
+  "Thought": "Add IRHoma RTL",
+  "Shouting": "Add AFSANEH RTL",
+  "SFX": "Add AFSANEH RTL",
+  "Whisper/Soft": "Add A nic RTL",
+  "Electronic": "Add Consolas RTL",
+  "Narration": "Add IRElham RTL",
+  "Distorted/Custom": "Add Shabnam BoldItalic RTL",
+  "default": "Add Mikhak RTL"
 };
 
-function normalizeFontId(name) {
-  return collapseWhitespace(toStr(name)).toLowerCase().replace(/[\s_-]+/g, "");
+function getActionForType(type){
+  if (type && FONT_ACTIONS[type]) return FONT_ACTIONS[type];
+  return FONT_ACTIONS["default"];
 }
 
-function collectFontCandidates(fontName) {
-  var seen = {};
-  var candidates = [];
-  function add(name) {
-    if (!name) return;
-    var id = normalizeFontId(name);
-    if (!id || seen[id]) return;
-    seen[id] = true;
-    candidates.push(name);
-  }
-
-  add(fontName);
-  if (FONT_ALIASES[fontName]) {
-    for (var i = 0; i < FONT_ALIASES[fontName].length; i++) {
-      add(FONT_ALIASES[fontName][i]);
-    }
-  }
-
+function applyTextActionToLayer(layer, actionName) {
+  if (!layer || !actionName) return false;
   try {
-    var fonts = app.fonts;
-    if (fonts && fonts.length) {
-      for (var c = 0; c < candidates.length; c++) {
-        var target = normalizeFontId(candidates[c]);
-        for (var j = 0; j < fonts.length; j++) {
-          var f = fonts[j];
-          if (!f) continue;
-          var psId = normalizeFontId(f.postScriptName);
-          var nameId = normalizeFontId(f.name);
-          if (psId === target || nameId === target) {
-            add(f.postScriptName);
-            add(f.name);
-          }
-        }
-      }
-    }
-  } catch (e) {}
-
-  add("ArialMT");
-  add("Arial");
-  add("Arial-BoldMT");
-  return candidates;
-}
-
-function findInstalledFont(preferredNames) {
-  try {
-    var fonts = app.fonts;
-    if (!fonts || !fonts.length) return null;
-    for (var i = 0; i < preferredNames.length; i++) {
-      var target = normalizeFontId(preferredNames[i]);
-      for (var j = 0; j < fonts.length; j++) {
-        var f = fonts[j];
-        if (!f) continue;
-        if (normalizeFontId(f.postScriptName) === target || normalizeFontId(f.name) === target) {
-          return f;
-        }
-      }
-    }
-  } catch (e) {}
-  return null;
-}
-
-function resolveFontOrFallback(fontName) {
-  var candidates = collectFontCandidates(fontName);
-
-  var found = findInstalledFont(candidates);
-  if (found) {
-    if (normalizeFontId(found.postScriptName) !== normalizeFontId(fontName)) {
-      log('  ⚠️ requested font "' + fontName + '" resolved to "' + found.postScriptName + '"');
-    }
-    return found.postScriptName;
-  }
-
-  log('  ⚠️ requested font "' + fontName + '" not found; falling back to Photoshop default');
-  try {
-    return app.fonts[0].postScriptName;
+    app.activeDocument.activeLayer = layer;
+    app.doAction(actionName, FONT_ACTION_SET);
+    return true;
   } catch (e) {
-    return fontName || "ArialMT";
+    log('  ⚠️ failed to run action "' + actionName + '" from set "' + FONT_ACTION_SET + '": ' + e);
+    return false;
   }
 }
 
-function applyFontToTextItem(textItem, requestedFont) {
-  if (!textItem) return requestedFont;
-
-  var candidates = collectFontCandidates(requestedFont);
-  var fallback = requestedFont;
-
-  // Prefer assigning via a real font object (textFont) so Photoshop doesn't silently
-  // swap the font when the string id is ambiguous.
-  var matched = findInstalledFont(candidates);
-  if (matched) {
-    try {
-      textItem.textFont = matched;
-      textItem.font = matched.postScriptName;
-      if (requestedFont && normalizeFontId(matched.postScriptName) !== normalizeFontId(requestedFont)) {
-        log('  ⚠️ requested font "' + requestedFont + '" resolved to "' + matched.postScriptName + '"');
-      }
-      return matched.postScriptName;
-    } catch (assignErr) {
-      log('  ⚠️ failed to apply font object "' + matched.postScriptName + '": ' + assignErr);
-    }
-  }
-
-  for (var i = 0; i < candidates.length; i++) {
-    var candidate = candidates[i];
-    try {
-      textItem.font = candidate;
-      var applied = textItem.font;
-      if (normalizeFontId(applied) !== normalizeFontId(candidate)) {
-        log('  ⚠️ Photoshop applied font "' + applied + '" instead of requested "' + candidate + '"');
-        continue;
-      }
-      if (requestedFont && normalizeFontId(applied) !== normalizeFontId(requestedFont)) {
-        log('  ⚠️ requested font "' + requestedFont + '" resolved to "' + applied + '"');
-      }
-      return applied;
-    } catch (e) {
-      log('  ⚠️ failed to apply font "' + candidate + '": ' + e);
-    }
-
-    if (!fallback) fallback = candidate;
-  }
-
-  try {
-    var defaultFont = app.fonts && app.fonts.length ? app.fonts[0].postScriptName : (fallback || "ArialMT");
-    textItem.font = defaultFont;
-    log('  ⚠️ falling back to default font "' + defaultFont + '"');
-    return defaultFont;
-  } catch (fallbackErr) {
-    log('  ⚠️ could not apply fallback font: ' + fallbackErr);
-  }
-
-  return fallback || requestedFont;
-}
-
-function getFontForType(type){
-  var requested;
-  switch(type){
-    case "Standard": requested = "Mikhak"; break;
-    case "Thought":         requested = "IRHoma"; break;
-    case "Shouting":requested = "AFSANEH"; break;
-    case "SFX":requested = "AFSANEH"; break;
-    case "Whisper/Soft":    requested = "A nic Regular"; break;
-    case "Electronic":      requested = "Consolas"; break;
-    case "Narration":   requested = "IRElham"; break;
-    case "Distorted/Custom":requested = "Shabnam-BoldItalic"; break;
-    default:                requested = "ArialMT"; break;
-  }
-  return resolveFontOrFallback(requested);
-}
-
-function forceRTL(s){
-  var RLE="\u202B", PDF="\u202C", RLM="\u200F";
-  var str = toStr(s);
-  if (!str) return RLM;
-  return keepZWNJ(str, function(raw){
-    var norm = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    var parts = norm.split("\n");
-    for (var i=0; i<parts.length; i++){
-      parts[i] = RLM + RLE + parts[i] + PDF;
-    }
-    return parts.join("\r");
-  });
-}
-
-function applyParagraphDirectionRTL(textForDirection) {
-  try {
-    if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return;
-    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
-    var ti  = app.activeDocument.activeLayer.textItem;
-    var txt = forceRTL(textForDirection !== undefined ? textForDirection : ti.contents);
-    var len = txt.length;
-
-    var desc = new ActionDescriptor();
-    var ref  = new ActionReference();
-    ref.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
-    desc.putReference(c2t('null'), ref);
-
-    var textDesc = new ActionDescriptor();
-
-    var psList  = new ActionList();
-    var psRange = new ActionDescriptor();
-    psRange.putInteger(s2t('from'), 0);
-    psRange.putInteger(s2t('to'),   len);
-
-    var pStyle = new ActionDescriptor();
-    pStyle.putEnumerated(
-      s2t('paragraphDirection'),
-      s2t('paragraphDirection'),
-      s2t('RightToLeftParagraph')
-    );
-    pStyle.putEnumerated(
-      s2t('justification'),
-      s2t('justification'),
-      s2t('center')
-    );
-
-    psRange.putObject(s2t('paragraphStyle'), s2t('paragraphStyle'), pStyle);
-    psList.putObject(s2t('paragraphStyleRange'), psRange);
-    textDesc.putList(s2t('paragraphStyleRange'), psList);
-
-    desc.putObject(c2t('T   '), s2t('textLayer'), textDesc);
-    executeAction(c2t('setd'), desc, DialogModes.NO);
-
-    ti.justification = Justification.CENTER;
-  } catch(e) {}
-}
-
-function trySetMEEveryLineComposer() {
-  try {
-    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
-    var d = new ActionDescriptor(), r = new ActionReference();
-    r.putEnumerated(s2t('textLayer'), c2t('Ordn'), c2t('Trgt'));
-    d.putReference(c2t('null'), r);
-    var t = new ActionDescriptor();
-    t.putEnumerated(
-      s2t('textComposer'),
-      s2t('textComposer'),
-      s2t('adbeMEEveryLineComposer')
-    );
-    d.putObject(c2t('T   '), s2t('textLayer'), t);
-    executeAction(c2t('setd'), d, DialogModes.NO);
-  } catch (e) {}
+function setTextContents(ti, text) {
+  if (!ti) return;
+  ti.contents = toStr(text);
 }
 
 function deriveRotationDeg(item){
@@ -972,7 +736,7 @@ function deriveRotationDeg(item){
 }
 
 // ===== Precise wrapping inspired by the Python helper =====
-function TextMeasureContext(doc, fontName, sizePx) {
+function TextMeasureContext(doc, actionName, sizePx) {
   this.doc = doc;
   this.layer = doc.artLayers.add();
   this.layer.name = "__measure__";
@@ -981,7 +745,7 @@ function TextMeasureContext(doc, fontName, sizePx) {
   var ti = this.layer.textItem;
   ti.kind = TextType.POINTTEXT;
   ti.contents = ".";
-  applyFontToTextItem(ti, fontName);
+  applyTextActionToLayer(this.layer, actionName);
   ti.size = sizePx;
   ti.justification = Justification.CENTER;
   ti.position = [0, 0];
@@ -997,7 +761,7 @@ TextMeasureContext.prototype.measureWidth = function(text){
   if (!text) return 0;
   try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
   this.layer.visible = true;
-  setTextContentsRTL(this.textItem, text);
+  setTextContents(this.textItem, text);
   var bounds = layerBoundsPx(this.layer);
   return bounds.width;
 };
@@ -1096,10 +860,10 @@ function rebalanceMiddleLines(wordsLines, measureCtx, maxWidth, passes) {
   return wordsLines;
 }
 
-function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx) {
+function layoutBubbleLines(text, doc, actionName, sizePx, maxWidth, maxHeight, sharedCtx) {
   var widthLimit = Math.max(1, maxWidth || 1);
   var ownsContext = !sharedCtx;
-  var ctx = sharedCtx || new TextMeasureContext(doc, fontName, sizePx);
+  var ctx = sharedCtx || new TextMeasureContext(doc, actionName, sizePx);
   try {
     var words = splitWordsForLayout(text);
     if (!words.length) return [];
@@ -1119,8 +883,8 @@ function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight, sha
   }
 }
 
-function layoutBubble(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx) {
-  var linesWords = layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx);
+function layoutBubble(text, doc, actionName, sizePx, maxWidth, maxHeight, sharedCtx) {
+  var linesWords = layoutBubbleLines(text, doc, actionName, sizePx, maxWidth, maxHeight, sharedCtx);
   if (!linesWords.length) return "";
   var parts = [];
   for (var i = 0; i < linesWords.length; i++) {
@@ -1174,11 +938,6 @@ function estimateSafeFontSizeForWrapped(wrapped, innerW, innerH, baseSize){
 }
 
 // Create paragraph exactly the inner bubble size
-function setTextContentsRTL(ti, text) {
-  if (!ti) return;
-  ti.contents = forceRTL(text);
-}
-
 // ===== Fast point-text fitting (single-pass scale) =====
 // Creates a POINTTEXT layer, fits it to the target bubble once, and centers it.
 // Requirements:
@@ -1187,7 +946,7 @@ function setTextContentsRTL(ti, text) {
 // - Explicitly sets textItem.kind = TextType.POINTTEXT
 // - Uses manual line breaks (\r) from precomputed lines
 // - Single measurement to compute scale, one font-size set, optional re-measure, single translate
-function createPointTextFastFit(doc, linesArray, fontName, bubbleRect, alignment) {
+function createPointTextFastFit(doc, linesArray, actionName, bubbleRect, alignment) {
   if (!doc) return null;
 
   var lines = linesArray && linesArray.length ? linesArray : [""];
@@ -1197,8 +956,8 @@ function createPointTextFastFit(doc, linesArray, fontName, bubbleRect, alignment
   lyr.kind = LayerKind.TEXT;
   var ti = lyr.textItem;
   ti.kind = TextType.POINTTEXT;
-  setTextContentsRTL(ti, text);
-  applyFontToTextItem(ti, fontName);
+  setTextContents(ti, text);
+  applyTextActionToLayer(lyr, actionName);
 
   var initialSize = 48;
   ti.size = initialSize;
@@ -1246,14 +1005,14 @@ function createPointTextFastFit(doc, linesArray, fontName, bubbleRect, alignment
   return lyr;
 }
 
-function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH, textColor){
+function createParagraphFullBox(doc, text, actionName, sizePx, cx, cy, innerW, innerH, textColor){
   var left = cx - innerW/2, top = cy - innerH/2;
   var lyr = doc.artLayers.add();
   lyr.kind = LayerKind.TEXT;
   var ti = lyr.textItem;
   ti.kind = TextType.PARAGRAPHTEXT;
-  setTextContentsRTL(ti, text);
-  applyFontToTextItem(ti, fontName);
+  setTextContents(ti, text);
+  applyTextActionToLayer(lyr, actionName);
   ti.size = sizePx;
   try { ti.leading = Math.max(1, Math.floor(sizePx * 1.18)); } catch(e){}
   ti.justification = Justification.CENTER;
@@ -1285,7 +1044,7 @@ function buildMeasureLayerFromLine(lyr, lineText) {
     measureLayer.visible = false;
     var measureTi = measureLayer.textItem;
     measureTi.kind = TextType.POINTTEXT;
-    measureTi.contents = forceRTL(lineText);
+    measureTi.contents = toStr(lineText);
     measureTi.justification = Justification.CENTER;
     measureTi.position = [0, 0];
     return measureLayer;
@@ -1301,7 +1060,7 @@ function buildMeasureLayerFromText(lyr, text) {
     measureLayer.visible = false;
     var measureTi = measureLayer.textItem;
     measureTi.kind = TextType.POINTTEXT;
-    measureTi.contents = forceRTL(toStr(text).replace(/\r/g, "\n"));
+    measureTi.contents = toStr(text).replace(/\r/g, "\n");
     measureTi.justification = Justification.CENTER;
     measureTi.position = [0, 0];
     return measureLayer;
@@ -1543,7 +1302,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     var palette = buildItemPalette(item);
     var layoutCtx = null;
     function ensureLayoutContext() {
-      if (!layoutCtx) layoutCtx = new TextMeasureContext(doc, fontName, baseSize);
+      if (!layoutCtx) layoutCtx = new TextMeasureContext(doc, actionName, baseSize);
       return layoutCtx;
     }
 
@@ -1583,7 +1342,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
     log("  bubbleSize=(" + bw + "x" + bh + ") pad=" + pad + " inner=(" + innerW + "x" + innerH + ")");
 
     var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
-    var fontName  = getFontForType(item.bubble_type || "Standard");
+    var actionName = getActionForType(item.bubble_type || "Standard");
 
     // build text seed
     var baseSeedText;
@@ -1598,7 +1357,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       wrappedForced = manualLines.join("\r");
     } else {
       baseSeedText = collapseWhitespace(raw);
-      wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH, ensureLayoutContext());
+      wrappedForced = layoutBubble(baseSeedText, doc, actionName, baseSize, innerW, innerH, ensureLayoutContext());
       if (!wrappedForced) wrappedForced = baseSeedText;
     }
 
@@ -1610,7 +1369,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
 
     if (hasManualBreaks && sizeForced < baseSize * 0.7) {
       log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
-      var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH, ensureLayoutContext());
+      var wrappedFree = layoutBubble(baseSeedText, doc, actionName, baseSize, innerW, innerH, ensureLayoutContext());
       var sizeFree    = estimateSafeFontSizeForWrapped(wrappedFree, innerW, innerH, baseSize);
       log("  alt reflow size=" + sizeFree);
       if (sizeFree > sizeForced) {
@@ -1618,7 +1377,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       }
     }
 
-    log("  font=" + fontName);
+    log("  action=" + actionName + " (set: " + FONT_ACTION_SET + ")");
 
     var linesArray = wrapped.replace(/\r\n/g, "\r").replace(/\n/g, "\r").split("\r");
     var bubbleRect = {
@@ -1627,7 +1386,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
       width: innerW,
       height: innerH
     };
-    var lyr = createPointTextFastFit(doc, linesArray, fontName, bubbleRect, "center");
+    var lyr = createPointTextFastFit(doc, linesArray, actionName, bubbleRect, "center");
     var ti = lyr.textItem;
     try { ti.color = palette.textColor; } catch (colorErr) { ti.color = solidBlack(); }
     log("  point-text fitted size=" + ti.size);
