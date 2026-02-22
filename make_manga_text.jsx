@@ -7,26 +7,36 @@
 
 #target photoshop
 app.displayDialogs = DialogModes.NO;
+var __origRulerUnits = app.preferences.rulerUnits;
+var __origTypeUnits = app.preferences.typeUnits;
 app.preferences.rulerUnits = Units.PIXELS;
+try { app.preferences.typeUnits = TypeUnits.PIXELS; } catch (e) {}
+
+function __restorePrefs() {
+  try { app.preferences.typeUnits = __origTypeUnits; } catch (e) {}
+  try { app.preferences.rulerUnits = __origRulerUnits; } catch (e) {}
+}
 
 // ===== USER CONFIG =====
-var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker");  // change if needed
-var imageFile   = File(scriptFolder + "/94107d26-f530-4994-8a94-e48a6e70777c.png");
-var jsonFile    = File(scriptFolder + "/positions.json");
+var scriptFolder = Folder("C:/Users/abbas/Desktop/psd maker new");  // change if needed
+var imageFile   = File(scriptFolder + "/wild/raw 48/0048-011.png");
+var jsonFile    = File(scriptFolder + "/wild/json final/0048-011.json");
 var outputPSD   = File(scriptFolder + "/manga_output.psd");
+var outputJPG   = File(scriptFolder + "/manga_output.jpg");
+var EXPORT_PSD_TO_JPG = true; // set to false to skip exporting a JPG copy of the PSD
 
 // Optional batch mode: process an entire chapter
 // Put all page images inside `chapterImagesFolder` and a matching JSON per image
 // (same base name, .json extension) inside `chapterJsonFolder`.
 // Outputs will be written to `chapterOutputFolder` using `<basename>_output.psd`.
-var PROCESS_WHOLE_CHAPTER = false;
-var chapterImagesFolder  = Folder(scriptFolder + "/chapter_images");
-var chapterJsonFolder    = Folder(scriptFolder + "/chapter_json");
-var chapterOutputFolder  = Folder(scriptFolder + "/chapter_output");
+var PROCESS_WHOLE_CHAPTER = true;
+var chapterImagesFolder  = Folder("C:/Users/abbas/Desktop/manhwa test/jjk modulo/chapter 17/site/images");
+var chapterJsonFolder    = Folder("C:/Users/abbas/Desktop/manhwa test/jjk modulo/chapter 17/site/json");
+var chapterOutputFolder  = Folder("C:/Users/abbas/Desktop/manhwa test/jjk modulo/chapter 17/site/output");
 
 // ===== DEBUG + FILE LOGGING =====
-var DEBUG = true;
-var LOG_TO_FILE = true;
+var DEBUG = false;
+var LOG_TO_FILE = false;
 var DEBUG_CONTENT_AWARE = false; // highlight removal selections for debugging
 var CONTENT_AWARE_DEBUG_COLOR = { red: 255, green: 0, blue: 0, opacity: 35 };
 var logFile = File(scriptFolder + "/manga_log.txt");
@@ -73,24 +83,110 @@ function toStr(v){
     return String(v);
   } catch(e){ return ""; }
 }
-function safeTrim(s){ return s.replace(/^[\s\u00A0]+/, "").replace(/[\s\u00A0]+$/, ""); }
-function collapseWhitespace(s){ return s.replace(/\s+/g, " "); }
+function safeTrim(s){
+  return keepZWNJ(s, function (txt) {
+    return toStr(txt)
+      .replace(/^[ \t\u00A0\r\n]+/, "")
+      .replace(/[ \t\u00A0\r\n]+$/, "");
+  });
+}
+// Do not treat Zero Width Non-Joiner (\u200C) as whitespace so Persian نیم‌فاصله stays intact
+// Protect Persian zero-width non-joiner (half-space) from being eaten by whitespace cleanup
+var ZWNJ = "\u200C";
+// Normalize ZWNJ handling for ExtendScript JSON quirks
+function normalizeZWNJInJsonText(rawJson) {
+  if (!rawJson) return "";
+  var txt = String(rawJson);
+
+  // Normalize any HTML-style ZWNJ encodings to actual U+200C
+  txt = txt.replace(/&zwnj;/gi, ZWNJ);
+  txt = txt.replace(/&#8204;/gi, ZWNJ);
+
+  // Convert every actual U+200C in the JSON text into a literal "\u200c"
+  txt = txt.replace(/\u200C/g, "\\u200c");
+
+  return txt;
+}
+
+function normalizeZWNJFromText(val) {
+  var str = (val === undefined || val === null) ? "" : String(val);
+  if (!str) return "";
+
+  var normalized = str;
+  normalized = normalized.replace(/\u200c/gi, ZWNJ);
+  normalized = normalized.replace(/\\u200c/gi, ZWNJ);
+  normalized = normalized.replace(/&zwnj;/gi, ZWNJ);
+  normalized = normalized.replace(/&#8204;/gi, ZWNJ);
+  return normalized;
+}
+
+function restoreZWNJ(val, placeholder) {
+  if (val instanceof Array) {
+    var restored = [];
+    for (var i = 0; i < val.length; i++) {
+      restored.push(restoreZWNJ(val[i], placeholder));
+    }
+    return restored;
+  }
+  return toStr(val).split(placeholder).join(ZWNJ);
+}
+
+function keepZWNJ(str, transformFn) {
+  if (!transformFn) return str;
+  var placeholder = "__ZWNJ__SAFE__";
+  var guarded = toStr(str).split(ZWNJ).join(placeholder);
+  var result = transformFn(guarded);
+  return restoreZWNJ(result, placeholder);
+}
+
+function collapseWhitespace(s){
+  return keepZWNJ(s, function (txt) {
+    return txt.replace(/[ \t\u00A0\r\n]+/g, " ");
+  });
+}
 
 // Keep line breaks, normalize spaces, and convert literal "\n" to real newlines
 function normalizeWSKeepBreaks(s){
   var str = toStr(s);
   if (!str) return "";
-  var norm = str.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  norm = norm.replace(/\\n/g, "\n");
-  var parts = norm.split("\n");
-  for (var i=0; i<parts.length; i++){
-    parts[i] = parts[i].replace(/[ \t\u00A0]+/g, " ");
+  return keepZWNJ(str, function (raw) {
+    var norm = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    norm = norm.replace(/\\n/g, "\n");
+    var parts = norm.split("\n");
+    for (var i=0; i<parts.length; i++){
+      parts[i] = parts[i].replace(/[ \t\u00A0]+/g, " ");
+    }
+    return parts.join("\n");
+  });
+}
+
+function normalizeItemZWNJ(item) {
+  if (!item) return item;
+  if (item.text !== undefined) item.text = normalizeZWNJFromText(item.text);
+  return item;
+}
+
+function normalizeItemsZWNJ(items) {
+  if (!items || !items.length) return items;
+  for (var i = 0; i < items.length; i++) {
+    normalizeItemZWNJ(items[i]);
   }
-  return parts.join("\n");
+  return items;
 }
 
 // ===== Geometry helpers =====
 function solidBlack(){ var c=new SolidColor(); c.rgb.red=0;c.rgb.green=0;c.rgb.blue=0; return c; }
+function solidWhite(){ var c=new SolidColor(); c.rgb.red=255;c.rgb.green=255;c.rgb.blue=255; return c; }
+function buildItemPalette(item) {
+  var hasBubbleBox = !!(item && item.bbox_bubble);
+  var reversed = hasBubbleBox && item && item.reverse_color === true;
+  return {
+    textColor: reversed ? solidWhite() : solidBlack(),
+    strokeColor: reversed ? solidBlack() : solidWhite(),
+    simpleBgColor: reversed ? solidBlack() : solidWhite(),
+    reversed: reversed
+  };
+}
 function clampInt(v){ return Math.round(v); }
 function layerBoundsPx(lyr){
   var b = lyr.bounds;
@@ -110,6 +206,82 @@ function layerCenterPx(lyr){
 function translateToCenter(lyr, cx, cy){
   var c = layerCenterPx(lyr);
   lyr.translate(cx - c.x, cy - c.y);
+}
+
+function scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, fillRatio, minPointSize, cx, cy) {
+  if (!lyr || !ti || !item) return;
+  if (!item.bbox_bubble) return;
+
+  var minSize = (typeof minPointSize === "number") ? minPointSize : 18;
+  var currentSize = Number(ti.size);
+  if (!isFinite(currentSize) || currentSize <= 0) return;
+  if (currentSize >= minSize) return;
+
+  var baselineSize = 22;
+
+  var bubbleBox = normalizeBox(item.bbox_bubble);
+  if (!bubbleBox) return;
+
+  var ratio = (typeof fillRatio === "number") ? fillRatio : 0.9;
+  var bubbleW = Math.max(1, (bubbleBox.right - bubbleBox.left) * scaleX);
+  var bubbleH = Math.max(1, (bubbleBox.bottom - bubbleBox.top) * scaleY);
+  var targetW = bubbleW * ratio;
+  var targetH = bubbleH * ratio;
+
+  var bounds = layerBoundsPx(lyr);
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+
+  var scaleW = targetW / bounds.width;
+  var scaleH = targetH / bounds.height;
+  var scaleToFit = Math.min(scaleW, scaleH);
+  if (!isFinite(scaleToFit) || scaleToFit <= 0) return;
+
+  var maxScaleByPoint = baselineSize / currentSize;
+  var scale = Math.min(scaleToFit, maxScaleByPoint);
+  if (!isFinite(scale) || scale <= 0 || scale === 1) return;
+
+  log('  scaling small text layer "' + lyr.name + '" from ' + currentSize + 'pt by ' + scale.toFixed(3) +
+      ' (max 22pt, target ratio ' + ratio + ')');
+  lyr.resize(scale * 100, scale * 100, AnchorPosition.MIDDLECENTER);
+  translateToCenter(lyr, cx, cy);
+}
+
+function applyStrokeColor(layer, sizePx, color) {
+  if (!layer) return;
+  var strokeSize = (typeof sizePx === 'number' && sizePx > 0) ? sizePx : 2;
+  var col = (color && color.rgb) ? color.rgb : solidWhite().rgb;
+  try {
+    var s2t = stringIDToTypeID, c2t = charIDToTypeID;
+    var desc = new ActionDescriptor();
+    var ref = new ActionReference();
+    ref.putProperty(c2t('Prpr'), s2t('layerEffects'));
+    ref.putEnumerated(c2t('Lyr '), c2t('Ordn'), c2t('Trgt'));
+    desc.putReference(c2t('null'), ref);
+
+    var effects = new ActionDescriptor();
+    var stroke = new ActionDescriptor();
+
+    stroke.putBoolean(s2t('enabled'), true);
+    stroke.putBoolean(s2t('present'), true);
+    stroke.putBoolean(s2t('showInDialog'), true);
+    stroke.putEnumerated(s2t('style'), s2t('frameStyle'), s2t('outsetFrame'));
+    stroke.putEnumerated(s2t('paintType'), s2t('paintType'), s2t('solidColor'));
+    stroke.putEnumerated(s2t('mode'), s2t('blendMode'), s2t('normal'));
+    stroke.putUnitDouble(s2t('opacity'), c2t('#Prc'), 100.0);
+    stroke.putUnitDouble(s2t('size'), c2t('#Pxl'), strokeSize);
+
+    var colorDesc = new ActionDescriptor();
+    colorDesc.putDouble(c2t('Rd  '), col.red);
+    colorDesc.putDouble(c2t('Grn '), col.green);
+    colorDesc.putDouble(c2t('Bl  '), col.blue);
+    stroke.putObject(c2t('Clr '), c2t('RGBC'), colorDesc);
+
+    effects.putObject(s2t('frameFX'), s2t('frameFX'), stroke);
+    desc.putObject(c2t('T   '), s2t('layerEffects'), effects);
+    executeAction(c2t('setd'), desc, DialogModes.NO);
+  } catch (e) {
+    log('  ⚠️ unable to apply stroke: ' + e);
+  }
 }
 
 function getBasePixelLayer(doc){
@@ -283,13 +455,14 @@ function selectSegments(doc, segments, scaleX, scaleY){
 }
 
 function boxToSegment(box, pad){
-  if (!box) return null;
+  var norm = normalizeBox(box);
+  if (!norm) return null;
   var p = (typeof pad === "number") ? pad : 0;
   return {
-    x_min: Number(box.left)   - p,
-    x_max: Number(box.right)  + p,
-    y_min: Number(box.top)    - p,
-    y_max: Number(box.bottom) + p
+    x_min: norm.left   - p,
+    x_max: norm.right  + p,
+    y_min: norm.top    - p,
+    y_max: norm.bottom + p
   };
 }
 
@@ -308,7 +481,68 @@ function polygonToBox(points){
   return { left:minX, top:minY, right:maxX, bottom:maxY };
 }
 
-function collectRemovalSegments(item){
+function normalizeBox(box) {
+  if (!box) return null;
+
+  function isNum(v) { return typeof v === "number" && !isNaN(v); }
+
+  var hasLTRB = isNum(box.left) && isNum(box.top) && isNum(box.right) && isNum(box.bottom);
+  if (hasLTRB) {
+    return {
+      left: Number(box.left),
+      top: Number(box.top),
+      right: Number(box.right),
+      bottom: Number(box.bottom)
+    };
+  }
+
+  var hasMinMax = isNum(box.x_min) && isNum(box.x_max) && isNum(box.y_min) && isNum(box.y_max);
+  if (hasMinMax) {
+    var x1 = Number(box.x_min), x2 = Number(box.x_max);
+    var y1 = Number(box.y_min), y2 = Number(box.y_max);
+    return {
+      left: Math.min(x1, x2),
+      right: Math.max(x1, x2),
+      top: Math.min(y1, y2),
+      bottom: Math.max(y1, y2)
+    };
+  }
+
+  return null;
+}
+
+function boxArea(box) {
+  var norm = normalizeBox(box);
+  if (!norm) return 0;
+  var w = Math.max(0, norm.right - norm.left);
+  var h = Math.max(0, norm.bottom - norm.top);
+  return w * h;
+}
+
+function textToBubbleAreaRatio(item) {
+  if (!item || !item.bbox_text || !item.bbox_bubble) return null;
+  var textArea = boxArea(item.bbox_text);
+  var bubbleArea = boxArea(item.bbox_bubble);
+  if (!textArea || !bubbleArea) return null;
+  return textArea / bubbleArea;
+}
+
+function textToBubbleSizeRatios(item) {
+  if (!item || !item.bbox_text || !item.bbox_bubble) return null;
+  var textBox = normalizeBox(item.bbox_text);
+  var bubbleBox = normalizeBox(item.bbox_bubble);
+  if (!textBox || !bubbleBox) return null;
+  var textW = Math.max(0, textBox.right - textBox.left);
+  var textH = Math.max(0, textBox.bottom - textBox.top);
+  var bubbleW = Math.max(0, bubbleBox.right - bubbleBox.left);
+  var bubbleH = Math.max(0, bubbleBox.bottom - bubbleBox.top);
+  if (!textW || !textH || !bubbleW || !bubbleH) return null;
+  return { width: textW / bubbleW, height: textH / bubbleH };
+}
+
+function collectRemovalSegments(item, options){
+  var opts = options || {};
+  var ignoreBboxText = !!opts.ignoreBboxText;
   var result = { segments: [], source: "none" };
   if (!item) return result;
   if (item.segments && item.segments.length) {
@@ -324,7 +558,7 @@ function collectRemovalSegments(item){
   if (item.polygon_text && item.polygon_text.length >= 3) {
     box = polygonToBox(item.polygon_text);
     result.source = "polygon_text";
-  } else if (item.bbox_text) {
+  } else if (item.bbox_text && !ignoreBboxText) {
     box = item.bbox_text;
     result.source = "bbox_text";
   } else if (item.bbox_bubble) {
@@ -342,8 +576,25 @@ function collectRemovalSegments(item){
   return result;
 }
 
-function removeOldTextSegments(doc, item, scaleX, scaleY){
-  var segmentsInfo = collectRemovalSegments(item);
+function removeOldTextSegments(doc, item, scaleX, scaleY, palette){
+  var ratio = textToBubbleAreaRatio(item);
+  var sizeRatio = textToBubbleSizeRatios(item);
+  var bboxTooLarge = sizeRatio && (sizeRatio.width > 0.73 || sizeRatio.height > 0.7);
+  var segmentsInfo = null;
+  if (bboxTooLarge) {
+    log('  bbox_text too large vs bbox_bubble (' +
+        Math.round(sizeRatio.width * 100) + '% x ' +
+        Math.round(sizeRatio.height * 100) + '%) -> ignore bbox_text');
+  } else if (ratio !== null && ratio < 0.5) {
+    var bboxSegment = boxToSegment(item.bbox_text, 2);
+    if (bboxSegment) {
+      segmentsInfo = { segments: [bboxSegment], source: "bbox_text_ratio" };
+      log('  [Bbox_text replaced with Segments] bbox_text/bbox_bubble area ratio ' + Math.round(ratio * 100) + '% < 50% -> using bbox_text for removal');
+    }
+  }
+  if (!segmentsInfo) {
+    segmentsInfo = collectRemovalSegments(item, { ignoreBboxText: bboxTooLarge });
+  }
   if (!segmentsInfo.segments.length) {
     log('  ⚠️ no segments available for content-aware fill');
     return;
@@ -360,6 +611,8 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
   }
   doc.activeLayer = cleanupLayer;
   try { doc.selection.deselect(); } catch (e) {}
+  var hasBubbleBox = !!(item && item.bbox_bubble);
+  var useContentAware = !hasBubbleBox;
   if (segmentsInfo.source !== 'json') {
     log('  deriving removal segments from ' + segmentsInfo.source);
   }
@@ -369,15 +622,25 @@ function removeOldTextSegments(doc, item, scaleX, scaleY){
     return;
   }
   highlightSelectionForDebug(doc, cleanupLayer);
-  log('  removing original text via content-aware fill over ' + segmentsInfo.segments.length + ' segments');
-  var filled = contentAwareFillSelection();
-  try { doc.selection.deselect(); } catch (e2) {}
-  if (!filled) {
-    log('  ⚠️ content-aware fill skipped due to error');
+  if (useContentAware) {
+    log('  removing original text via content-aware fill over ' + segmentsInfo.segments.length + ' segments');
+    var filled = contentAwareFillSelection();
+    if (!filled) {
+      log('  ⚠️ content-aware fill skipped due to error');
+    }
+  } else {
+    var fillColor = (palette && palette.simpleBgColor) ? palette.simpleBgColor : solidBlack();
+    log('  bbox_bubble detected -> filling selection with color over ' + segmentsInfo.segments.length + ' segments');
+    try {
+      doc.selection.fill(fillColor);
+    } catch (fillErr) {
+      log('  ⚠️ unable to fill selection: ' + fillErr);
+    }
   }
+  try { doc.selection.deselect(); } catch (e2) {}
 }
 
-// ===== Centers/boxes =====
+// ===== Centers/boxes =====اه
 function polygonCentroid(points){
   var n = points.length;
   if (n < 3) return null;
@@ -402,59 +665,252 @@ function deriveCenter(item){
   if (item && item.polygon_text && item.polygon_text.length>=3){
     var c = polygonCentroid(item.polygon_text); if (c) return c;
   }
-  if (item && item.center && typeof item.center.x==="number" && typeof item.center.y==="number") 
+  if (item && item.center && typeof item.center.x==="number" && typeof item.center.y==="number")
     return { x:item.center.x, y:item.center.y };
-  
+
   if (item && item.bbox_text){
-    var bt=item.bbox_text;
-    return { x:(bt.left+bt.right)/2, y:(bt.top+bt.bottom)/2 };
+    var bt=normalizeBox(item.bbox_text);
+    if (bt) return { x:(bt.left+bt.right)/2, y:(bt.top+bt.bottom)/2 };
   }
   if (item && item.bbox_bubble){
-    var bb=item.bbox_bubble;
-    return { x:(bb.left+bb.right)/2, y:(bb.top+bb.bottom)/2 };
+    var bb=normalizeBox(item.bbox_bubble);
+    if (bb) return { x:(bb.left+bb.right)/2, y:(bb.top+bb.bottom)/2 };
   }
   return null;
 }
 function deriveBox(item){
-  if (item && item.bbox_text)
-    return { left:item.bbox_text.left, top:item.bbox_text.top, right:item.bbox_text.right, bottom:item.bbox_text.bottom };
-  if (item && item.bbox_bubble)
-    return { left:item.bbox_bubble.left, top:item.bbox_bubble.top, right:item.bbox_bubble.right, bottom:item.bbox_bubble.bottom };
+  if (item && item.bbox_text){
+    var bt = normalizeBox(item.bbox_text);
+    if (bt) return bt;
+  }
+  if (item && item.bbox_bubble){
+    var bb = normalizeBox(item.bbox_bubble);
+    if (bb) return bb;
+  }
   return null;
 }
 
 // ===== Fonts & RTL helpers =====
-function getFontForType(type){
-  switch(type){
-    case "Standard Speech": return "Potk-Black";
-    case "Thought":         return "B Titr";
-    case "Shouting/Emotion":return "Impact";
-    case "Whisper/Soft":    return "B Nazanin Light";
-    case "Electronic":      return "Consolas";
-    case "Narration Box":   return "B Mitra";
-    case "Distorted/Custom":return "Shabnam-BoldItalic";
-    default:                return "ArialMT";
+var FONT_ALIASES = {
+  "IRANSans Black": [
+    "IRANSans-Black",
+    "IRANSansBlack",
+    "IRANSans",
+    "IRANSansWeb-Black",
+    "IRANSansWeb(FaNum)",
+    "IRANSans(FaNum)",
+    "IRANSans(Farsi)",
+    "IranSans-Black",
+    "IranSans Black"
+  ],
+  "IRKoodak": [
+    "IRKoodak-Regular",
+    "IR Koodak",
+    "IR Koodak Bold",
+    "IRKoodak Bold",
+    "IRKoodakBold",
+    "IRKoodak(Bold)",
+    "B Koodak",
+    "BKoodak",
+    "B Koodak Bold",
+    "B Koodak(Farsi)"
+  ],
+  "B Morvarid": ["B Morvarid-Regular", "B Morvarid Regular"],
+  "AFSANEH": ["AFSANEH","AFSANEH-Regular", "AFSANEH Regular"],
+  "Potk": ["Potk-Black"],
+  "Kalameh": ["Kalameh-Regular"],
+  "Mikhak": ["Mikhak-DS1-Regular","Mikhak-Regular", "Mikhak", "Mikhak-DS1"],
+  "IRHoma": ["IRHoma","IRHoma-Regular"],
+  "IRElham": ["IRElham","IRElham-Regular"],
+  "A nic Regular": ["A nic", "A-nic", "A-nic-Regular"],
+  "IRFarnaz": [
+    "IRFarnaz",
+    "IRFarnaz-Regular",
+    "IRFarnaz Regular",
+    "IR Farnaz",
+    "IRFarnaz(Farsi)",
+    "IRFarnaz Farsi",
+    "B Farnaz",
+    "BFarnaz",
+    "Farnaz(Farsi)"
+  ],
+  "Shabnam-BoldItalic": ["Shabnam Bold Italic", "Shabnam BoldItalic", "ShabnamBI"]
+};
+
+function normalizeFontId(name) {
+  return collapseWhitespace(toStr(name)).toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function collectFontCandidates(fontName) {
+  var seen = {};
+  var candidates = [];
+  function add(name) {
+    if (!name) return;
+    var id = normalizeFontId(name);
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    candidates.push(name);
   }
+
+  add(fontName);
+  if (FONT_ALIASES[fontName]) {
+    for (var i = 0; i < FONT_ALIASES[fontName].length; i++) {
+      add(FONT_ALIASES[fontName][i]);
+    }
+  }
+
+  try {
+    var fonts = app.fonts;
+    if (fonts && fonts.length) {
+      for (var c = 0; c < candidates.length; c++) {
+        var target = normalizeFontId(candidates[c]);
+        for (var j = 0; j < fonts.length; j++) {
+          var f = fonts[j];
+          if (!f) continue;
+          var psId = normalizeFontId(f.postScriptName);
+          var nameId = normalizeFontId(f.name);
+          if (psId === target || nameId === target) {
+            add(f.postScriptName);
+            add(f.name);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  add("ArialMT");
+  add("Arial");
+  add("Arial-BoldMT");
+  return candidates;
+}
+
+function findInstalledFont(preferredNames) {
+  try {
+    var fonts = app.fonts;
+    if (!fonts || !fonts.length) return null;
+    for (var i = 0; i < preferredNames.length; i++) {
+      var target = normalizeFontId(preferredNames[i]);
+      for (var j = 0; j < fonts.length; j++) {
+        var f = fonts[j];
+        if (!f) continue;
+        if (normalizeFontId(f.postScriptName) === target || normalizeFontId(f.name) === target) {
+          return f;
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function resolveFontOrFallback(fontName) {
+  var candidates = collectFontCandidates(fontName);
+
+  var found = findInstalledFont(candidates);
+  if (found) {
+    if (normalizeFontId(found.postScriptName) !== normalizeFontId(fontName)) {
+      log('  ⚠️ requested font "' + fontName + '" resolved to "' + found.postScriptName + '"');
+    }
+    return found.postScriptName;
+  }
+
+  log('  ⚠️ requested font "' + fontName + '" not found; falling back to Photoshop default');
+  try {
+    return app.fonts[0].postScriptName;
+  } catch (e) {
+    return fontName || "ArialMT";
+  }
+}
+
+function applyFontToTextItem(textItem, requestedFont) {
+  if (!textItem) return requestedFont;
+
+  var candidates = collectFontCandidates(requestedFont);
+  var fallback = requestedFont;
+
+  // Prefer assigning via a real font object (textFont) so Photoshop doesn't silently
+  // swap the font when the string id is ambiguous.
+  var matched = findInstalledFont(candidates);
+  if (matched) {
+    try {
+      textItem.textFont = matched;
+      textItem.font = matched.postScriptName;
+      if (requestedFont && normalizeFontId(matched.postScriptName) !== normalizeFontId(requestedFont)) {
+        log('  ⚠️ requested font "' + requestedFont + '" resolved to "' + matched.postScriptName + '"');
+      }
+      return matched.postScriptName;
+    } catch (assignErr) {
+      log('  ⚠️ failed to apply font object "' + matched.postScriptName + '": ' + assignErr);
+    }
+  }
+
+  for (var i = 0; i < candidates.length; i++) {
+    var candidate = candidates[i];
+    try {
+      textItem.font = candidate;
+      var applied = textItem.font;
+      if (normalizeFontId(applied) !== normalizeFontId(candidate)) {
+        log('  ⚠️ Photoshop applied font "' + applied + '" instead of requested "' + candidate + '"');
+        continue;
+      }
+      if (requestedFont && normalizeFontId(applied) !== normalizeFontId(requestedFont)) {
+        log('  ⚠️ requested font "' + requestedFont + '" resolved to "' + applied + '"');
+      }
+      return applied;
+    } catch (e) {
+      log('  ⚠️ failed to apply font "' + candidate + '": ' + e);
+    }
+
+    if (!fallback) fallback = candidate;
+  }
+
+  try {
+    var defaultFont = app.fonts && app.fonts.length ? app.fonts[0].postScriptName : (fallback || "ArialMT");
+    textItem.font = defaultFont;
+    log('  ⚠️ falling back to default font "' + defaultFont + '"');
+    return defaultFont;
+  } catch (fallbackErr) {
+    log('  ⚠️ could not apply fallback font: ' + fallbackErr);
+  }
+
+  return fallback || requestedFont;
+}
+
+function getFontForType(type){
+  var requested;
+  switch(type){
+    case "Standard": requested = "Mikhak"; break;
+    case "Thought":         requested = "IRHoma"; break;
+    case "Shouting":requested = "AFSANEH"; break;
+    case "SFX":requested = "AFSANEH"; break;
+    case "Whisper/Soft":    requested = "A nic Regular"; break;
+    case "Electronic":      requested = "Consolas"; break;
+    case "Narration":   requested = "IRElham"; break;
+    case "Distorted/Custom":requested = "Shabnam-BoldItalic"; break;
+    default:                requested = "ArialMT"; break;
+  }
+  return resolveFontOrFallback(requested);
 }
 
 function forceRTL(s){
   var RLE="\u202B", PDF="\u202C", RLM="\u200F";
   var str = toStr(s);
   if (!str) return RLM;
-  var norm = str.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  var parts = norm.split("\n");
-  for (var i=0; i<parts.length; i++){
-    parts[i] = RLM + RLE + parts[i] + PDF;
-  }
-  return parts.join("\r");
+  return keepZWNJ(str, function(raw){
+    var norm = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    var parts = norm.split("\n");
+    for (var i=0; i<parts.length; i++){
+      parts[i] = RLM + RLE + parts[i] + PDF;
+    }
+    return parts.join("\r");
+  });
 }
 
-function applyParagraphDirectionRTL() {
+function applyParagraphDirectionRTL(textForDirection) {
   try {
     if (app.activeDocument.activeLayer.kind !== LayerKind.TEXT) return;
     var s2t = stringIDToTypeID, c2t = charIDToTypeID;
     var ti  = app.activeDocument.activeLayer.textItem;
-    var txt = ti.contents;
+    var txt = forceRTL(textForDirection !== undefined ? textForDirection : ti.contents);
     var len = txt.length;
 
     var desc = new ActionDescriptor();
@@ -463,7 +919,6 @@ function applyParagraphDirectionRTL() {
     desc.putReference(c2t('null'), ref);
 
     var textDesc = new ActionDescriptor();
-    textDesc.putString(s2t('textKey'), txt);
 
     var psList  = new ActionList();
     var psRange = new ActionDescriptor();
@@ -526,7 +981,7 @@ function TextMeasureContext(doc, fontName, sizePx) {
   var ti = this.layer.textItem;
   ti.kind = TextType.POINTTEXT;
   ti.contents = ".";
-  ti.font = fontName;
+  applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
   ti.justification = Justification.CENTER;
   ti.position = [0, 0];
@@ -542,7 +997,7 @@ TextMeasureContext.prototype.measureWidth = function(text){
   if (!text) return 0;
   try { app.activeDocument.activeLayer = this.layer; } catch (e) {}
   this.layer.visible = true;
-  this.textItem.contents = text;
+  setTextContentsRTL(this.textItem, text);
   var bounds = layerBoundsPx(this.layer);
   return bounds.width;
 };
@@ -554,12 +1009,14 @@ TextMeasureContext.prototype.lineHeight = function(){
 function splitWordsForLayout(text) {
   var s = safeTrim(toStr(text));
   if (!s) return [];
-  var raw = s.split(/\s+/);
-  var words = [];
-  for (var i = 0; i < raw.length; i++) {
-    if (raw[i]) words.push(raw[i]);
-  }
-  return words;
+  return keepZWNJ(s, function (guarded) {
+    var raw = guarded.split(/[ \t\u00A0\r\n]+/);
+    var words = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i]) words.push(raw[i]);
+    }
+    return words;
+  });
 }
 
 function greedyWrapWordsPixels(words, measureCtx, maxWidth) {
@@ -639,9 +1096,10 @@ function rebalanceMiddleLines(wordsLines, measureCtx, maxWidth, passes) {
   return wordsLines;
 }
 
-function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight) {
+function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx) {
   var widthLimit = Math.max(1, maxWidth || 1);
-  var ctx = new TextMeasureContext(doc, fontName, sizePx);
+  var ownsContext = !sharedCtx;
+  var ctx = sharedCtx || new TextMeasureContext(doc, fontName, sizePx);
   try {
     var words = splitWordsForLayout(text);
     if (!words.length) return [];
@@ -657,12 +1115,12 @@ function layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight) {
     linesWords = rebalanceMiddleLines(linesWords, ctx, widthLimit, 4);
     return linesWords;
   } finally {
-    ctx.dispose();
+    if (ownsContext) ctx.dispose();
   }
 }
 
-function layoutBubble(text, doc, fontName, sizePx, maxWidth, maxHeight) {
-  var linesWords = layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight);
+function layoutBubble(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx) {
+  var linesWords = layoutBubbleLines(text, doc, fontName, sizePx, maxWidth, maxHeight, sharedCtx);
   if (!linesWords.length) return "";
   var parts = [];
   for (var i = 0; i < linesWords.length; i++) {
@@ -716,21 +1174,93 @@ function estimateSafeFontSizeForWrapped(wrapped, innerW, innerH, baseSize){
 }
 
 // Create paragraph exactly the inner bubble size
-function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH){
+function setTextContentsRTL(ti, text) {
+  if (!ti) return;
+  ti.contents = forceRTL(text);
+}
+
+// ===== Fast point-text fitting (single-pass scale) =====
+// Creates a POINTTEXT layer, fits it to the target bubble once, and centers it.
+// Requirements:
+// - Uses point text (no paragraph box)
+// - No textItem.width/height
+// - Explicitly sets textItem.kind = TextType.POINTTEXT
+// - Uses manual line breaks (\r) from precomputed lines
+// - Single measurement to compute scale, one font-size set, optional re-measure, single translate
+function createPointTextFastFit(doc, linesArray, fontName, bubbleRect, alignment) {
+  if (!doc) return null;
+
+  var lines = linesArray && linesArray.length ? linesArray : [""];
+  var text = lines.join("\r");
+
+  var lyr = doc.artLayers.add();
+  lyr.kind = LayerKind.TEXT;
+  var ti = lyr.textItem;
+  ti.kind = TextType.POINTTEXT;
+  setTextContentsRTL(ti, text);
+  applyFontToTextItem(ti, fontName);
+
+  var initialSize = 48;
+  ti.size = initialSize;
+  try { ti.leading = Math.max(1, Math.floor(initialSize * 1.18)); } catch (e) {}
+
+  var justification = Justification.CENTER;
+  if (alignment === Justification.LEFT || alignment === Justification.RIGHT || alignment === Justification.CENTER) {
+    justification = alignment;
+  } else if (typeof alignment === "string") {
+    var alignLower = alignment.toLowerCase();
+    if (alignLower === "left") justification = Justification.LEFT;
+    if (alignLower === "right") justification = Justification.RIGHT;
+    if (alignLower === "center") justification = Justification.CENTER;
+  }
+  ti.justification = justification;
+
+  // Use a stable start position; we will center via translate after sizing.
+  ti.position = [bubbleRect.x, bubbleRect.y];
+
+  // Measure once at the initial size.
+  var initialBounds = layerBoundsPx(lyr);
+  var measuredW = Math.max(1, initialBounds.width);
+  var measuredH = Math.max(1, initialBounds.height);
+
+  var scaleW = bubbleRect.width / measuredW;
+  var scaleH = bubbleRect.height / measuredH;
+  var scale = Math.min(scaleW, scaleH) * 0.98;
+  var finalSize = Math.max(1, initialSize * scale);
+
+  // Apply the scaled font size once.
+  ti.size = finalSize;
+  try { ti.leading = Math.max(1, Math.floor(finalSize * 1.18)); } catch (e2) {}
+
+  // Optional re-measure after resizing (no loops).
+  var finalBounds = layerBoundsPx(lyr);
+
+  var targetCx = bubbleRect.x + bubbleRect.width / 2;
+  var targetCy = bubbleRect.y + bubbleRect.height / 2;
+  var currentCx = (finalBounds.left + finalBounds.right) / 2;
+  var currentCy = (finalBounds.top + finalBounds.bottom) / 2;
+
+  // Center the text inside the bubble with a single translate call.
+  lyr.translate(targetCx - currentCx, targetCy - currentCy);
+
+  return lyr;
+}
+
+function createParagraphFullBox(doc, text, fontName, sizePx, cx, cy, innerW, innerH, textColor){
   var left = cx - innerW/2, top = cy - innerH/2;
   var lyr = doc.artLayers.add();
   lyr.kind = LayerKind.TEXT;
   var ti = lyr.textItem;
   ti.kind = TextType.PARAGRAPHTEXT;
-  ti.contents = forceRTL(text);
-  ti.font = fontName;
+  setTextContentsRTL(ti, text);
+  applyFontToTextItem(ti, fontName);
   ti.size = sizePx;
   try { ti.leading = Math.max(1, Math.floor(sizePx * 1.18)); } catch(e){}
   ti.justification = Justification.CENTER;
   ti.position = [left, top];
   ti.width  = innerW;
   ti.height = innerH;
-  try { ti.color = app.foregroundColor; } catch(e){ ti.color = solidBlack(); }
+  try { ti.color = textColor ? textColor : solidBlack(); } catch(e){ ti.color = solidBlack(); }
   return lyr;
 }
 
@@ -764,6 +1294,22 @@ function buildMeasureLayerFromLine(lyr, lineText) {
   }
 }
 
+function buildMeasureLayerFromText(lyr, text) {
+  if (!lyr || !text) return null;
+  try {
+    var measureLayer = lyr.duplicate();
+    measureLayer.visible = false;
+    var measureTi = measureLayer.textItem;
+    measureTi.kind = TextType.POINTTEXT;
+    measureTi.contents = forceRTL(toStr(text).replace(/\r/g, "\n"));
+    measureTi.justification = Justification.CENTER;
+    measureTi.position = [0, 0];
+    return measureLayer;
+  } catch (e) {
+    return null;
+  }
+}
+
 function measureLineWidthFromLayer(measureLayer, sizePx) {
   if (!measureLayer) return 0;
   try {
@@ -776,9 +1322,84 @@ function measureLineWidthFromLayer(measureLayer, sizePx) {
   }
 }
 
+function measureTextSizeFromLayer(measureLayer, sizePx) {
+  if (!measureLayer) return null;
+  try {
+    var ti = measureLayer.textItem;
+    ti.size = sizePx;
+    var bounds = layerBoundsPx(measureLayer);
+    return { width: bounds.width, height: bounds.height };
+  } catch (e) {
+    return null;
+  }
+}
+
 function cleanupMeasureLayer(layer) {
   if (!layer) return;
   try { layer.remove(); } catch (e) {}
+}
+
+function overflowSlackPx(innerW, innerH) {
+  var slackW = Math.max(2, Math.min(6, Math.round(innerW * 0.03)));
+  var slackH = Math.max(2, Math.min(6, Math.round(innerH * 0.03)));
+  return { w: slackW, h: slackH };
+}
+
+// Final safety pass: if the rendered text still overflows the intended box, shrink slightly
+// until it fits. This guards against occasional measurement inaccuracies (e.g., fonts with
+// large descenders or extra line spacing) that can leave part of the text clipped.
+function clampRenderedTextToBox(lyr, ti, cx, cy, maxWidth, maxHeight, minSize) {
+  if (!lyr || !ti) return;
+
+  if (minSize === undefined) minSize = 10;
+
+  var slack = overflowSlackPx(maxWidth, maxHeight);
+  var MAX_ADJUSTMENTS = 8;
+  translateToCenter(lyr, cx, cy);
+  for (var i = 0; i < MAX_ADJUSTMENTS; i++) {
+    var bounds = layerBoundsPx(lyr);
+    var overflowW = bounds.width - maxWidth;
+    var overflowH = bounds.height - maxHeight;
+
+    if (overflowW <= slack.w && overflowH <= slack.h) break;
+
+    // Nudge the font size down based on the worst overflow dimension, but keep a floor.
+    var worstOverflow = Math.max(overflowW - slack.w, overflowH - slack.h);
+    var shrink = Math.max(1, Math.ceil(worstOverflow / 8));
+    var newSize = Math.max(minSize, ti.size - shrink);
+    if (newSize === ti.size) newSize = Math.max(minSize, ti.size - 1);
+    if (newSize === ti.size) break;
+
+    ti.size = newSize;
+    try { ti.leading = Math.max(1, Math.floor(newSize * 1.12)); } catch (e) {}
+  }
+
+  translateToCenter(lyr, cx, cy);
+}
+
+// After fitting/shrinking, make sure the paragraph box itself fully contains the rendered
+// glyph bounds so nothing gets clipped by a too-small text box.
+function expandParagraphBoxToContent(lyr, ti, cx, cy, paddingPx) {
+  if (!lyr || !ti) return;
+
+  var pad = (paddingPx === undefined) ? 6 : Math.max(0, paddingPx);
+
+  translateToCenter(lyr, cx, cy);
+
+  var bounds = layerBoundsPx(lyr);
+  if (!bounds) return;
+
+  var desiredW = Math.ceil(bounds.width + pad * 2);
+  var desiredH = Math.ceil(bounds.height + pad * 2);
+
+  var changed = false;
+
+  try {
+    if (desiredW > ti.width + 1) { ti.width = desiredW; changed = true; }
+    if (desiredH > ti.height + 1) { ti.height = desiredH; changed = true; }
+  } catch (e) {}
+
+  if (changed) translateToCenter(lyr, cx, cy);
 }
 
 function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, rawTextForLines) {
@@ -792,34 +1413,34 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   }
   var lineCount = Math.max(1, lines.length || 1);
   var measureLayer = longestLine ? buildMeasureLayerFromLine(lyr, longestLine) : null;
+  var measureAllTextLayer = rawTextForLines ? buildMeasureLayerFromText(lyr, rawTextForLines) : null;
+
+  var slack = overflowSlackPx(innerW, innerH);
 
   log("  [autoFit] innerW=" + innerW + " innerH=" + innerH +
       (longestLine ? " longestLine=\"" + longestLine + "\"" : ""));
 
-  function estimateContentHeight(sizePx) {
-    var lineHeight = Math.max(1, Math.floor(sizePx * 1.18));
-    return lineHeight * lineCount;
-  }
-
   function sizeFits(sizePx) {
     ti.size = sizePx;
     try { ti.leading = Math.max(1, Math.floor(sizePx * 1.12)); } catch (e) {}
-    translateToCenter(lyr, cx, cy);
 
     var b = layerBoundsPx(lyr);
     var w = b.width;
     var h = b.height;
 
     var measuredLineWidth = measureLayer ? measureLineWidthFromLayer(measureLayer, sizePx) : w;
-    var widthOverflow  = (measuredLineWidth > innerW + 1);
-    var estHeight = estimateContentHeight(sizePx);
-    var heightOverflow = (estHeight > innerH + 1);
+    var measuredAllSize = measureTextSizeFromLayer(measureAllTextLayer, sizePx);
+    var measuredAllWidth = measuredAllSize ? measuredAllSize.width : w;
+    var measuredAllHeight = measuredAllSize ? measuredAllSize.height : h;
+
+    var widthOverflow  = (w > innerW + slack.w) || (measuredLineWidth > innerW + slack.w) || (measuredAllWidth > innerW + slack.w);
+    var heightOverflow = (h > innerH + slack.h) || (measuredAllHeight > innerH + slack.h);
     var overflow = widthOverflow || heightOverflow;
 
     log("    test size=" + sizePx +
         " bounds=(" + w.toFixed(1) + "x" + h.toFixed(1) + ")" +
         (measureLayer ? " longestLineWidth=" + measuredLineWidth.toFixed(1) : "") +
-        " estHeight=" + estHeight.toFixed(1) +
+        (measuredAllSize ? " measureAll=(" + measuredAllWidth.toFixed(1) + "x" + measuredAllHeight.toFixed(1) + ")" : "") +
         " overflow=" + overflow);
 
     return !overflow;
@@ -846,12 +1467,14 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
     steps++;
   }
 
-  var finalHeightEstimate = estimateContentHeight(best);
+  var finalBounds = layerBoundsPx(lyr);
+  var finalHeightEstimate = finalBounds ? finalBounds.height : innerH;
   log("  [autoFit] finalSize=" + best + " estHeight=" + finalHeightEstimate);
 
   sizeFits(best);
 
   cleanupMeasureLayer(measureLayer);
+  cleanupMeasureLayer(measureAllTextLayer);
 
   var safeHeight = Math.max(innerH, finalHeightEstimate + 20);
   if (ti.height < safeHeight) {
@@ -860,6 +1483,11 @@ function autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, minSize, maxSize, raw
   }
 
   translateToCenter(lyr, cx, cy);
+
+  return {
+    size: best,
+    height: ti.height
+  };
 }
 
 function ensureFolderExists(folder) {
@@ -870,7 +1498,7 @@ function ensureFolderExists(folder) {
   return folder;
 }
 
-function processImageWithJson(imageFile, jsonFile, outputPSD) {
+function processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG) {
   // ===== OPEN IMAGE =====
   if (!imageFile.exists) {
     alert("❌ Image not found:\n" + imageFile.fsName);
@@ -887,15 +1515,16 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   jsonFile.open("r");
   var jsonText = jsonFile.read();
   jsonFile.close();
+  jsonText = normalizeZWNJInJsonText(jsonText);
   log("Loaded JSON: " + jsonFile.fsName);
   var data = JSON.parse(jsonText);
 
   // Accept { image_size, items } OR legacy array
   var items=null, srcW=null, srcH=null;
   if (data && data.items && data.image_size){
-    items=data.items; srcW=data.image_size.width; srcH=data.image_size.height;
+    items=normalizeItemsZWNJ(data.items); srcW=data.image_size.width; srcH=data.image_size.height;
   } else if (data instanceof Array){
-    items=data; srcW=doc.width.as('px'); srcH=doc.height.as('px');
+    items=normalizeItemsZWNJ(data); srcW=doc.width.as('px'); srcH=doc.height.as('px');
   } else {
     throw new Error("JSON must contain { image_size, items } or be an array");
   }
@@ -910,6 +1539,13 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
   for (var i=0; i<items.length; i++){
     var item = items[i];
     if (!item) continue;
+
+    var palette = buildItemPalette(item);
+    var layoutCtx = null;
+    function ensureLayoutContext() {
+      if (!layoutCtx) layoutCtx = new TextMeasureContext(doc, fontName, baseSize);
+      return layoutCtx;
+    }
 
     var raw = toStr(item.text);
     raw = normalizeWSKeepBreaks(raw);
@@ -929,7 +1565,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     var cx = clampInt(c.x * scaleX), cy = clampInt(c.y * scaleY);
     log("  center=(" + cx + "," + cy + ")");
 
-    removeOldTextSegments(doc, item, scaleX, scaleY);
+    removeOldTextSegments(doc, item, scaleX, scaleY, palette);
 
     var box = deriveBox(item);
     var PAD_FRAC = 0.10, MIN_W = 70, MIN_H = 60;
@@ -947,7 +1583,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
     log("  bubbleSize=(" + bw + "x" + bh + ") pad=" + pad + " inner=(" + innerW + "x" + innerH + ")");
 
     var baseSize = (typeof item.size === "number" && item.size > 0) ? item.size : 28;
-    var fontName  = getFontForType(item.bubble_type || "Standard Speech");
+    var fontName  = getFontForType(item.bubble_type || "Standard");
 
     // build text seed
     var baseSeedText;
@@ -962,7 +1598,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
       wrappedForced = manualLines.join("\r");
     } else {
       baseSeedText = collapseWhitespace(raw);
-      wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
+      wrappedForced = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH, ensureLayoutContext());
       if (!wrappedForced) wrappedForced = baseSeedText;
     }
 
@@ -974,7 +1610,7 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
 
     if (hasManualBreaks && sizeForced < baseSize * 0.7) {
       log("  manual breaks cause tiny size ("+sizeForced+") -> try reflow without forced lines");
-      var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH);
+      var wrappedFree = layoutBubble(baseSeedText, doc, fontName, baseSize, innerW, innerH, ensureLayoutContext());
       var sizeFree    = estimateSafeFontSizeForWrapped(wrappedFree, innerW, innerH, baseSize);
       log("  alt reflow size=" + sizeFree);
       if (sizeFree > sizeForced) {
@@ -982,25 +1618,19 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
       }
     }
 
-    var finalSize = baseSize;
-    log("  startSize(final)=" + finalSize + " font=" + fontName);
+    log("  font=" + fontName);
 
-    var lyr = createParagraphFullBox(doc, wrapped, fontName, finalSize, cx, cy, innerW, innerH);
-    var ti  = lyr.textItem;
-
-    app.activeDocument.activeLayer = lyr;
-    applyParagraphDirectionRTL();
-    trySetMEEveryLineComposer();
-
-    ti = lyr.textItem;
-    ti.justification = Justification.CENTER;
-
-    ti.position = [cx - ti.width/2, cy - ti.height/2];
-    translateToCenter(lyr, cx, cy);
-
-    var MIN_SIZE = 12;
-    var MAX_SIZE = 60; // cap for binary search auto-fit
-    autoFitTextLayer(lyr, ti, cx, cy, innerW, innerH, MIN_SIZE, MAX_SIZE, wrapped);
+    var linesArray = wrapped.replace(/\r\n/g, "\r").replace(/\n/g, "\r").split("\r");
+    var bubbleRect = {
+      x: cx - innerW / 2,
+      y: cy - innerH / 2,
+      width: innerW,
+      height: innerH
+    };
+    var lyr = createPointTextFastFit(doc, linesArray, fontName, bubbleRect, "center");
+    var ti = lyr.textItem;
+    try { ti.color = palette.textColor; } catch (colorErr) { ti.color = solidBlack(); }
+    log("  point-text fitted size=" + ti.size);
 
     var rot = deriveRotationDeg(item);
     if (rot && Math.abs(rot) > 0.001) {
@@ -1008,14 +1638,58 @@ function processImageWithJson(imageFile, jsonFile, outputPSD) {
       lyr.rotate(rot, AnchorPosition.MIDDLECENTER);
     }
     translateToCenter(lyr, cx, cy);
+    scaleLayerToBubbleIfSmallText(lyr, ti, item, scaleX, scaleY, 0.9, 22, cx, cy);
+
+    var needsStroke = item && !item.bbox_bubble;
+    if (needsStroke) {
+      log('  complex background without bbox -> applying 3px stroke');
+      try { doc.activeLayer = lyr; } catch (strokeErr) {}
+      applyStrokeColor(lyr, 3, palette.strokeColor);
+    }
+
+    if (layoutCtx) {
+      layoutCtx.dispose();
+    }
   }
 
   // ===== SAVE =====
   var psdSaveOptions = new PhotoshopSaveOptions();
+  psdSaveOptions.embedColorProfile = true;
+  psdSaveOptions.layers = true;
+  psdSaveOptions.maximizeCompatibility = true;
+  psdSaveOptions.alphaChannels = true;
+  psdSaveOptions.annotations = true;
+  psdSaveOptions.spotColors = true;
+
   doc.saveAs(outputPSD, psdSaveOptions, true);
+  log("✅ Done! Saved PSD: " + outputPSD.fsName);
+
+  var finalAlert = "✅ Done! Saved PSD: " + outputPSD.fsName;
+
+  if (EXPORT_PSD_TO_JPG) {
+    var jpgTarget = outputJPG;
+    if (!jpgTarget) {
+      jpgTarget = File(outputPSD.fsName.replace(/\.psd$/i, ".jpg"));
+    }
+
+    var jpgOptions = new JPEGSaveOptions();
+    jpgOptions.embedColorProfile = true;
+    jpgOptions.quality = 12; // highest quality
+    jpgOptions.formatOptions = FormatOptions.STANDARDBASELINE;
+    jpgOptions.matte = MatteType.NONE;
+
+    doc.saveAs(jpgTarget, jpgOptions, true);
+    log("✅ Also exported JPG: " + jpgTarget.fsName);
+    finalAlert += "\nJPG: " + jpgTarget.fsName;
+  } else {
+    log("✅ JPG export disabled by EXPORT_PSD_TO_JPG");
+  }
+
+  if (!PROCESS_WHOLE_CHAPTER) {
+    alert(finalAlert);
+  }
+
   doc.close(SaveOptions.DONOTSAVECHANGES);
-  log("✅ Done! Saved: " + outputPSD.fsName);
-  alert("✅ Done! Saved: " + outputPSD.fsName);
 }
 
 function listImageFiles(folder) {
@@ -1056,15 +1730,20 @@ function runChapterBatch() {
     }
 
     var outPath = File(chapterOutputFolder + "/" + base + "_output.psd");
-    processImageWithJson(img, jsonPath, outPath);
+    var outJpg  = File(chapterOutputFolder + "/" + base + "_output.jpg");
+    processImageWithJson(img, jsonPath, outPath, outJpg);
   }
 
   alert("✅ Chapter batch complete! Saved to: " + chapterOutputFolder.fsName);
 }
 
 // ===== ENTRY POINT =====
-if (PROCESS_WHOLE_CHAPTER) {
-  runChapterBatch();
-} else {
-  processImageWithJson(imageFile, jsonFile, outputPSD);
+try {
+  if (PROCESS_WHOLE_CHAPTER) {
+    runChapterBatch();
+  } else {
+    processImageWithJson(imageFile, jsonFile, outputPSD, outputJPG);
+  }
+} finally {
+  __restorePrefs();
 }
